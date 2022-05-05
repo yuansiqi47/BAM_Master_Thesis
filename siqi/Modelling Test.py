@@ -22,7 +22,7 @@ from sklearn.model_selection import validation_curve
 # COMMAND ----------
 
 # load data
-df = pd.read_csv("/dbfs/FileStore/Siqi thesis/df.csv")
+df = pd.read_csv("/dbfs/FileStore/Siqi thesis/df_V2.csv")
 
 # COMMAND ----------
 
@@ -36,10 +36,6 @@ df = df.drop(columns = ['P2'])
 # COMMAND ----------
 
 df = df.iloc[:,1:]
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 
@@ -135,86 +131,169 @@ evaluation
 
 # COMMAND ----------
 
-# MAGIC %md 
-# MAGIC ## expriment
+# MAGIC %md
+# MAGIC ##Experiment
 
 # COMMAND ----------
 
-from sklearn.model_selection import cross_val_score
-from hyperopt import fmin, tpe, hp, SparkTrials, STATUS_OK, Trials
-import mlflow
-
-# COMMAND ----------
-
-def objective(params):
-    classifier_type = params['type']
-    del params['type']
-    if classifier_type == 'svm':
-        clf = SVC(**params, random_state = 0)
-    elif classifier_type == 'rf':
-        clf = RandomForestClassifier(**params, random_state = 0)
-    elif classifier_type == 'logreg':
-        clf = LogisticRegression(**params, random_state = 0, penalty = 'l1')
-    elif classifier_type == 'gb':
-        clf = GradientBoostingClassifier(**params, random_state = 0)
-    else:
-        return 0
-    fbeta_score = cross_val_score(clf, sm_X_train, sm_y_train, scoring = fbeta).mean()
+mlflow.autolog()
     
-    # Because fmin() tries to minimize the objective, this function must return the negative accuracy. 
-    return {'loss': -fbeta_score, 'status': STATUS_OK}
-
-# COMMAND ----------
-
-search_space = hp.choice('classifier_type', [
-    {
-        'type': 'svm',
-        'C': hp.lognormal('SVM_C', 0, 1.0),
-        'kernel': hp.choice('kernel', ['poly', 'rbf']),
-        'degree': hp.quniform('degree', 2, 5, 1)
-    },
-    {
-        'type': 'rf',
-        'n_estimators' : hp.quniform('RF_n_estimators', 50, 200, 50),
-        'max_depth': hp.quniform('RF_max_depth', 4, 20, 4),
-        'criterion': hp.choice('criterion', ['gini', 'entropy'])
-    },
-    {
-        'type': 'logreg',
-        'C': hp.lognormal('LR_C', 0, 1.0),
-        'solver': hp.choice('solver', ['liblinear', 'lbfgs'])
-    },
-    {
-        'type': 'gb',
-        'n_estimators' : hp.quniform('GB_n_estimators', 50, 200, 50),
-        'max_depth': hp.quniform('GB_max_depth', 4, 20, 4),
-        'learning_rate': hp.lognormal('learning_rate', 0, 1.0)
-    },
-])
+parameters = {'n_estimators' : [100],
+              'max_depth': [4]}
+rf = RandomForestClassifier(random_state=0)
+    
+with mlflow.start_run(run_name='rf_grid_search') as run:
+    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+    clf.fit(sm_X_train, sm_y_train)
 
 
 # COMMAND ----------
 
-algo=tpe.suggest
+best_rf = clf.best_estimator_
+best_rf.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
 
-spark_trials = SparkTrials()
+mlflow.autolog()
+    
+parameters = {'n_estimators' : [100, 200, 300, 500, 1000],
+              'max_depth': [4, 6, 8, 15, 30]}
+rf = RandomForestClassifier(random_state=0)
+    
+with mlflow.start_run(run_name='rf_grid_search') as run:
+    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+    clf.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
 
-with mlflow.start_run():
-  best_result = fmin(
-    fn=objective, 
-    space=search_space,
-    algo=algo,
-    max_evals=32,
-    trials=spark_trials)
+mlflow.autolog()
+    
+parameters = {'n_estimators' : [100, 200, 300, 500, 1000],
+              'max_depth': [4, 6, 8, 15, 30]}
+rf = RandomForestClassifier(random_state=0)
+    
+with mlflow.start_run(run_name='rf_grid_search') as run:
+    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+    clf.fit(sm_X_train, sm_y_train)
+
 
 # COMMAND ----------
 
-import hyperopt
-print(hyperopt.space_eval(search_space, best_result))
+mlflow.autolog()
+    
+parameters = {'n_estimators' : [100, 200, 300, 500, 1000],
+              'max_depth': [4, 6, 8, 15, 30]}
+rf = RandomForestClassifier(random_state=0)
+    
+with mlflow.start_run(run_name='rf_grid_search') as run:
+    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+    clf.fit(sm_X_train, sm_y_train)
+
+
+# COMMAND ----------
+
+# MAGIC %md 
+# MAGIC ### Gradient boosting
+
+# COMMAND ----------
+
+import mlflow
+from sklearn.model_selection import cross_val_score
+
+# COMMAND ----------
+
+for n in [50, 100, 150, 200, 250, 1000]:
+    for d in [2, 4, 6, 8]:
+        for l in [0.01, 0.05, 0.1, 0.25, 0.5]:
+            with mlflow.start_run(run_name='GB_cv') as run:
+                model = GradientBoostingClassifier(random_state=0, n_estimators = n, max_depth = d, learning_rate = l)
+                #model.fit(sm_X_train, sm_y_train)
+                #y_pred = model.predict(X_test)
+                mlflow.log_param('n_estimators', n)
+                mlflow.log_param('max_depth', d)
+                mlflow.log_param('learning_rate', l)
+                
+                fbeta_score = cross_val_score(model, sm_X_train, sm_y_train, scoring = fbeta, cv = 5).mean()
+                accuracy = cross_val_score(model, sm_X_train, sm_y_train, scoring = 'accuracy', cv = 5).mean()
+                precision = cross_val_score(model, sm_X_train, sm_y_train, scoring = 'precision', cv = 5).mean() 
+                recall = cross_val_score(model, sm_X_train, sm_y_train, scoring = 'recall', cv = 5).mean()
+                    
+               # accuracy = accuracy_score(y_test, y_pred)
+                #precision = precision_score(y_test, y_pred)
+                #recall = recall_score(y_test, y_pred)
+                #fbeta = fbeta_score(y_test, y_pred, beta = 2)
+                    
+                mlflow.log_metric("accuracy", accuracy)
+                mlflow.log_metric("precision", precision)
+                mlflow.log_metric("recall", recall)
+                mlflow.log_metric("fbeta", fbeta_score)
+                    
+
+
+# COMMAND ----------
+
+# MAGIC %md 
+# MAGIC ### Random Forest
+
+# COMMAND ----------
+
+for n in [100, 200, 300, 500, 1000]:
+    for d in [4, 6, 8, 15, 30]:
+        with mlflow.start_run(run_name='RF') as run:
+            model = RandomForestClassifier(random_state=0, n_estimators = n, max_depth = d)
+            #model.fit(sm_X_train, sm_y_train)
+            #y_pred = model.predict(X_test)
+            mlflow.log_param('n_estimators', n)
+            mlflow.log_param('max_depth', d)
+                    
+            fbeta_score = cross_val_score(model, sm_X_train, sm_y_train, scoring = fbeta, cv = 5).mean()
+            accuracy = cross_val_score(model, sm_X_train, sm_y_train, scoring = 'accuracy', cv = 5).mean()
+            precision = cross_val_score(model, sm_X_train, sm_y_train, scoring = 'precision', cv = 5).mean() 
+            recall = cross_val_score(model, sm_X_train, sm_y_train, scoring = 'recall', cv = 5).mean()
+                    
+            #accuracy = accuracy_score(y_test, y_pred)
+            #precision = precision_score(y_test, y_pred)
+            #recall = recall_score(y_test, y_pred)
+            #fbeta = fbeta_score(y_test, y_pred, beta = 2)
+                    
+            mlflow.log_metric("accuracy", accuracy)
+            mlflow.log_metric("precision", precision)
+            mlflow.log_metric("recall", recall)
+            mlflow.log_metric("fbeta", fbeta_score)
+                    
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### SVM
+
+# COMMAND ----------
+
+for c in [1, 0.5]:
+    for kernel in ['poly', 'rbf']:
+        with mlflow.start_run(run_name='SVM') as run:
+            model = SVC(random_state=0, C = c, kernel = kernel)
+            model.fit(sm_X_train, sm_y_train)
+            y_pred = model.predict(X_test)
+            mlflow.log_param('penality', c)
+            mlflow.log_param('kernel', kernel)
+                    
+            accuracy = accuracy_score(y_test, y_pred)
+            precision = precision_score(y_test, y_pred)
+            recall = recall_score(y_test, y_pred)
+            fbeta = fbeta_score(y_test, y_pred, beta = 2)
+                    
+            mlflow.log_metric("accuracy", accuracy)
+            mlflow.log_metric("precision", precision)
+            mlflow.log_metric("recall", recall)
+            mlflow.log_metric("fbeta", fbeta)
+                    
+
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Old way of doing things
 
 # COMMAND ----------
 
@@ -224,11 +303,12 @@ print(hyperopt.space_eval(search_space, best_result))
 # COMMAND ----------
 
 param_grid_lasso = {'C' : [0.001, 0.01, 0.1, 0.2, 0.5, 1]}
+                   #'l1_ratio': [0, 0.25, 0.5, 0.75, 1]}
 
 # COMMAND ----------
 
 lasso = LogisticRegression(random_state=0, penalty = 'l1', solver = 'liblinear', max_iter=1000)
-grid_search_lasso = GridSearchCV(estimator = lasso, param_grid = param_grid_lasso, scoring = fbeta, cv = 5)
+grid_search_lasso = GridSearchCV(estimator = lasso, param_grid = param_grid_lasso, scoring = fbeta, cv = 10)
 
 # COMMAND ----------
 
@@ -265,74 +345,14 @@ grid_search_lasso.cv_results_
 
 # COMMAND ----------
 
-##############################################stop here#####################################################
-
-# COMMAND ----------
-
-import mlflow 
-
-# COMMAND ----------
-
-with mlflow.start_run(run_name='lasso') as run:
- # model = sklearn.ensemble.GradientBoostingClassifier(random_state=0)
-
-  param_grid_lasso = {'C' : [0.2, 0.5, 1]}
-    
-  lasso = LogisticRegression(random_state=0, penalty = 'l1', solver = 'saga')
-
-  grid_search_lasso = GridSearchCV(estimator = lasso, param_grid = param_grid_lasso, scoring = fbeta, cv = 10)
-    
-  # Models, parameters, and training metrics are tracked automatically
-  grid_search_lasso.fit(sm_X_train, sm_y_train)
-    
-  best_lasso = grid_search_lasso.best_estimator_
-  best_lasso.fit(sm_X_train, sm_y_train)
-  y_pred = best_lasso.predict(X_test)
-#  predicted_probs = best_lasso.predict_proba(X_test)
-#  roc_auc = sklearn.metrics.roc_auc_score(y_test, predicted_probs[:,1])
-
-  accuracy = accuracy_score(y_test, y_pred)
-  precision = precision_score(y_test, y_pred)
-  recall = recall_score(y_test, y_pred)
-  fbeta_score = fbeta_score(y_test, y_pred, beta = 2)
-    
-  # The AUC score on test data is not automatically logged, so log it manually
-  # mlflow.log_metric("test_auc", roc_auc)
-  # print("Test AUC of: {}".format(roc_auc))
-
-# COMMAND ----------
-
 # MAGIC %md 
 # MAGIC ### Support Vector Machine
 
 # COMMAND ----------
 
-for c in [1, 0.5]:
-    for kernel in ['poly', 'rbf']:
-        with mlflow.start_run(run_name='SVM') as run:
-            model = SVC(random_state=0, C = c, kernel = kernel)
-            model.fit(sm_X_train, sm_y_train)
-            y_pred = model.predict(X_test)
-            mlflow.log_param('penality', c)
-            mlflow.log_param('kernel', kernel)
-                    
-            accuracy = accuracy_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred)
-            recall = recall_score(y_test, y_pred)
-            fbeta = fbeta_score(y_test, y_pred, beta = 2)
-                    
-            mlflow.log_metric("accuracy", accuracy)
-            mlflow.log_metric("precision", precision)
-            mlflow.log_metric("recall", recall)
-            mlflow.log_metric("fbeta", fbeta)
-                    
-
-
-# COMMAND ----------
-
-param_grid_svm = {'C' : [0.01, 0.1, 0.2, 0.5, 1],
+param_grid_svm = {'C' : [0.1, 1, 10, 100],
                   'kernel': ['poly', 'rbf'],
-                  'degree': [2, 3, 4, 5]
+                  'degree': [3, 5, 7, 9]
                  }
 
 # COMMAND ----------
@@ -384,46 +404,10 @@ grid_search_svm.cv_results_
 
 # COMMAND ----------
 
-for n in [50, 100, 200, 250, 300]:
-    for d in [4, 6, 8, 15]:
-        with mlflow.start_run(run_name='RF') as run:
-            model = RandomForestClassifier(random_state=0, n_estimators = n, max_depth = d)
-            model.fit(sm_X_train, sm_y_train)
-            y_pred = model.predict(X_test)
-            mlflow.log_param('n_estimators', n)
-            mlflow.log_param('max_depth', d)
-                    
-            accuracy = accuracy_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred)
-            recall = recall_score(y_test, y_pred)
-            fbeta = fbeta_score(y_test, y_pred, beta = 2)
-                    
-            mlflow.log_metric("accuracy", accuracy)
-            mlflow.log_metric("precision", precision)
-            mlflow.log_metric("recall", recall)
-            mlflow.log_metric("fbeta", fbeta)
-                    
-
-
-# COMMAND ----------
-
-mlflow.autolog()
-
-parameters = {'n_estimators' : [50, 100, 200, 250, 300],
-              'max_depth': [4, 6, 8, 15]}
-rf = RandomForestClassifier(random_state=0)
-clf = GridSearchCV(rf, parameters, cv = 5)
-
-clf.fit(sm_X_train, sm_y_train)
-#run_id = mlflow.last_active_run().info.run_id
-
-
-# COMMAND ----------
-
-param_grid_rf = {'n_estimators' : [50, 100, 200, 250, 300],
-                  'max_depth': [4, 6, 8, 15],
-                  'min_samples_split': [20, 50, 100],
-                  'min_samples_leaf': [10, 20, 50]
+param_grid_rf = {'n_estimators' : [100, 200, 300, 400, 500],
+                  'max_depth': [5, 10, 15, 20, 25],
+                  'min_samples_split': [25, 50, 75],
+                  'min_samples_leaf': [10, 20, 30]
                  }
 
 # COMMAND ----------
@@ -468,31 +452,6 @@ grid_search_rf.cv_results_
 
 # MAGIC %md 
 # MAGIC ### Gradient boosting
-
-# COMMAND ----------
-
-for n in [50, 100, 200, 250, 300]:
-    for d in [1, 2, 4, 6]:
-        for l in [0.001, 0.01, 0.1, 0.5]:
-            with mlflow.start_run(run_name='GB') as run:
-                model = GradientBoostingClassifier(random_state=0, n_estimators = n, max_depth = d, learning_rate = l)
-                model.fit(sm_X_train, sm_y_train)
-                y_pred = model.predict(X_test)
-                mlflow.log_param('n_estimators', n)
-                mlflow.log_param('max_depth', d)
-                mlflow.log_param('learning_rate', l)
-                    
-                accuracy = accuracy_score(y_test, y_pred)
-                precision = precision_score(y_test, y_pred)
-                recall = recall_score(y_test, y_pred)
-                fbeta = fbeta_score(y_test, y_pred, beta = 2)
-                    
-                mlflow.log_metric("accuracy", accuracy)
-                mlflow.log_metric("precision", precision)
-                mlflow.log_metric("recall", recall)
-                mlflow.log_metric("fbeta", fbeta)
-                    
-
 
 # COMMAND ----------
 

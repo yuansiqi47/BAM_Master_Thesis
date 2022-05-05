@@ -22,7 +22,7 @@ from sklearn.model_selection import validation_curve
 # COMMAND ----------
 
 # load data
-df = pd.read_csv("/dbfs/FileStore/Siqi thesis/df.csv")
+df = pd.read_csv("/dbfs/FileStore/Siqi thesis/df_V2.csv")
 
 # COMMAND ----------
 
@@ -39,7 +39,7 @@ df = df.iloc[:,1:]
 
 # COMMAND ----------
 
-
+df = df.sample(frac=1,  random_state=42).reset_index(drop=True)
 
 # COMMAND ----------
 
@@ -108,16 +108,16 @@ log_model.fit().summary()
 
 # COMMAND ----------
 
-lr = LogisticRegression(random_state=0, penalty = 'none')
+lr = LogisticRegression(random_state=0, penalty = 'none', max_iter = 1000)
 lr.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
 
-y_pred = lr.predict(X_test)
+y_pred_lr = lr.predict(X_test)
 
 # COMMAND ----------
 
-confusion_matrix(y_test, y_pred)
+confusion_matrix(y_test, y_pred_lr)
 
 # COMMAND ----------
 
@@ -127,11 +127,278 @@ evaluation = pd.DataFrame(columns = ['accuracy', 'precision', 'recall', 'F-beta'
 
 # COMMAND ----------
 
-evaluation.loc['Logistic regression (baseline)', :] = [accuracy_score(y_test, y_pred),
+evaluation.loc['Logistic regression (baseline)', :] = [accuracy_score(y_test, y_pred_lr),
+                                                       precision_score(y_test, y_pred_lr), 
+                                                       recall_score(y_test, y_pred_lr), 
+                                                       fbeta_score(y_test, y_pred_lr, beta = 2)]
+evaluation
+
+# COMMAND ----------
+
+pd_lr = lr.predict_proba(X_test)[:, 1]
+pd_lr
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Experiment
+
+# COMMAND ----------
+
+from sklearn.model_selection import cross_val_score
+from hyperopt import fmin, tpe, hp, SparkTrials, STATUS_OK, Trials
+import mlflow
+
+# COMMAND ----------
+
+def objective(params):
+    classifier_type = params['type']
+    del params['type']
+    if classifier_type == 'svm':
+        clf = SVC(**params, random_state = 0)
+    elif classifier_type == 'rf':
+        clf = RandomForestClassifier(**params, random_state = 0)
+    elif classifier_type == 'logreg':
+        clf = LogisticRegression(**params, random_state = 0, penalty = 'l1')
+    elif classifier_type == 'gb':
+        clf = GradientBoostingClassifier(**params, random_state = 0)
+    else:
+        return 0
+    fbeta_score = cross_val_score(clf, sm_X_train, sm_y_train, scoring = fbeta).mean()
+    
+    # Because fmin() tries to minimize the objective, this function must return the negative accuracy. 
+    return {'loss': -fbeta_score, 'status': STATUS_OK}
+
+# COMMAND ----------
+
+# MAGIC %md 
+# MAGIC ### Lasso penalized logistic regression
+
+# COMMAND ----------
+
+algo=tpe.suggest
+
+# COMMAND ----------
+
+spark_trials = SparkTrials(parallelism = 32)
+
+# COMMAND ----------
+
+search_space_lasso = {
+        'type': 'logreg',
+        'C': hp.lognormal('LR_C', 0, 1.0),
+        'solver': hp.choice('solver', ['liblinear', 'saga'])
+    }
+
+
+# COMMAND ----------
+
+with mlflow.start_run():
+    best_result = fmin(
+        fn=objective, 
+        space=search_space_lasso,
+        algo=algo,
+        max_evals=32,
+        trials=spark_trials)
+
+# COMMAND ----------
+
+import hyperopt
+print(hyperopt.space_eval(search_space_lasso, best_result))
+
+# COMMAND ----------
+
+para_lasso = hyperopt.space_eval(search_space_lasso, best_result)
+del para_lasso['type']
+best_lasso = LogisticRegression(**para_lasso, random_state = 0, penalty = 'l1')
+best_lasso.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+y_pred_lasso = best_lasso.predict(X_test)
+
+# COMMAND ----------
+
+confusion_matrix(y_test, y_pred_lasso)
+
+# COMMAND ----------
+
+evaluation.loc['Logistic regression (Lasso)', :] = [accuracy_score(y_test, y_pred_lasso),
+                                                       precision_score(y_test, y_pred_lasso), 
+                                                       recall_score(y_test, y_pred_lasso), 
+                                                       fbeta_score(y_test, y_pred_lasso, beta = 2)]
+evaluation
+
+# COMMAND ----------
+
+pd_lasso = best_lasso.predict_proba(X_test)[:,1]
+pd_lasso
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## SVM
+
+# COMMAND ----------
+
+algo=tpe.suggest
+
+# COMMAND ----------
+
+spark_trials = SparkTrials(parallelism = 32, timeout = 36000)
+
+# COMMAND ----------
+
+search_space_svm = {
+        'type': 'svm',
+        'C': hp.lognormal('SVM_C', 0, 1.0),
+        'kernel': hp.choice('kernel', ['poly', 'rbf']),
+        'degree': hp.quniform('degree', 2, 8, 1)
+    }
+
+# COMMAND ----------
+
+with mlflow.start_run():
+    best_result = fmin(
+        fn=objective, 
+        space=search_space_svm,
+        algo=algo,
+        max_evals=32,
+        trials=spark_trials)
+
+# COMMAND ----------
+
+import hyperopt
+print(hyperopt.space_eval(search_space_svm, best_result))
+
+
+# COMMAND ----------
+
+para_svm = hyperopt.space_eval(search_space_svm, best_result)
+del para_svm['type']
+best_svm = SVC(**para_svm, random_state = 0)
+
+# COMMAND ----------
+
+best_svm.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+y_pred = best_svm.predict(X_test)
+
+# COMMAND ----------
+
+confusion_matrix(y_test, y_pred)
+
+# COMMAND ----------
+
+evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred),
+                            precision_score(y_test, y_pred),
+                            recall_score(y_test, y_pred), 
+                            fbeta_score(y_test, y_pred, beta = 2)]
+evaluation
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## GB
+
+# COMMAND ----------
+
+search_space_gb = {
+        'type': 'gb',
+        'n_estimators' : hp.quniform('GB_n_estimators', 50, 500, 50),
+#        'max_depth': hp.quniform('GB_max_depth', 4, 20, 4),
+ #       'learning_rate': hp.lognormal('learning_rate', 0, 1.0)
+    }
+
+
+# COMMAND ----------
+
+with mlflow.start_run():
+#    mlflow.log_metric("fbeta", fbeta_score)
+    best_result = fmin(
+        fn=objective, 
+        space=search_space_gb,
+        algo=algo,
+        max_evals=32,
+        trials=spark_trials)
+
+# COMMAND ----------
+
+import hyperopt
+print(hyperopt.space_eval(search_space_svm, best_result))
+
+
+# COMMAND ----------
+
+para_rf = hyperopt.space_eval(search_space_rf, best_result)
+del para_rf['type']
+best_rf = LogisticRegression(**para_rf, random_state = 0, penalty = 'l1')
+best_rf.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+# MAGIC %md 
+# MAGIC ### Lasso penalized logistic regression
+
+# COMMAND ----------
+
+param_grid_lasso = {'C' : [5, 10, 15, 20]}
+
+# COMMAND ----------
+
+#lasso = LogisticRegression(random_state=0, penalty = 'l2', max_iter = 2000)
+lasso = LogisticRegression(random_state=0, penalty = 'l1', solver = 'liblinear', max_iter = 2000)
+grid_search_lasso = GridSearchCV(estimator = lasso, param_grid = param_grid_lasso, scoring = fbeta, cv = 5)
+
+# COMMAND ----------
+
+grid_search_lasso.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+best_lasso = grid_search_lasso.best_estimator_
+best_lasso.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+grid_search_lasso.best_score_
+
+# COMMAND ----------
+
+y_pred = best_lasso.predict(X_test)
+
+# COMMAND ----------
+
+confusion_matrix(y_test, y_pred)
+
+# COMMAND ----------
+
+evaluation.loc['Logistic regression (Lasso)', :] = [accuracy_score(y_test, y_pred),
                                                        precision_score(y_test, y_pred), 
                                                        recall_score(y_test, y_pred), 
                                                        fbeta_score(y_test, y_pred, beta = 2)]
 evaluation
+
+# COMMAND ----------
+
+grid_search_lasso.cv_results_
+
+# COMMAND ----------
+
+import shap  # package used to calculate Shap values
+
+# Create object that can calculate shap values
+explainer = shap.TreeExplainer(best_lasso)
+
+# Calculate Shap values
+shap_values = explainer.shap_values(X_test)
+
+# COMMAND ----------
+
+shap.initjs()
+shap.force_plot(explainer.expected_value[1], shap_values[1], X_test)
 
 # COMMAND ----------
 
@@ -170,7 +437,7 @@ search_space = hp.choice('classifier_type', [
     {
         'type': 'svm',
         'C': hp.lognormal('SVM_C', 0, 1.0),
-        'kernel': hp.choice('kernel', ['poly', 'rbf']),
+        'kernel': hp.choice('kernel', ['linear', 'poly', 'rbf']),
         'degree': hp.quniform('degree', 2, 5, 1)
     },
     {
@@ -195,6 +462,10 @@ search_space = hp.choice('classifier_type', [
 
 # COMMAND ----------
 
+hp.lognormal('LR_C', 0, 1)
+
+# COMMAND ----------
+
 algo=tpe.suggest
 
 # COMMAND ----------
@@ -208,60 +479,13 @@ with mlflow.start_run():
     fn=objective, 
     space=search_space,
     algo=algo,
-    max_evals=32,
+    max_evals=10,
     trials=spark_trials)
 
 # COMMAND ----------
 
 import hyperopt
 print(hyperopt.space_eval(search_space, best_result))
-
-# COMMAND ----------
-
-# MAGIC %md 
-# MAGIC ### Lasso penalized logistic regression
-
-# COMMAND ----------
-
-param_grid_lasso = {'C' : [0.001, 0.01, 0.1, 0.2, 0.5, 1]}
-
-# COMMAND ----------
-
-lasso = LogisticRegression(random_state=0, penalty = 'l1', solver = 'liblinear', max_iter=1000)
-grid_search_lasso = GridSearchCV(estimator = lasso, param_grid = param_grid_lasso, scoring = fbeta, cv = 5)
-
-# COMMAND ----------
-
-grid_search_lasso.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-best_lasso = grid_search_lasso.best_estimator_
-best_lasso.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-grid_search_lasso.best_score_
-
-# COMMAND ----------
-
-y_pred = best_lasso.predict(X_test)
-
-# COMMAND ----------
-
-confusion_matrix(y_test, y_pred)
-
-# COMMAND ----------
-
-evaluation.loc['Logistic regression (Lasso)', :] = [accuracy_score(y_test, y_pred),
-                                                       precision_score(y_test, y_pred), 
-                                                       recall_score(y_test, y_pred), 
-                                                       fbeta_score(y_test, y_pred, beta = 2)]
-evaluation
-
-# COMMAND ----------
-
-grid_search_lasso.cv_results_
 
 # COMMAND ----------
 
@@ -308,7 +532,7 @@ with mlflow.start_run(run_name='lasso') as run:
 # COMMAND ----------
 
 for c in [1, 0.5]:
-    for kernel in ['poly', 'rbf']:
+    for kernel in ['linear','poly', 'rbf']:
         with mlflow.start_run(run_name='SVM') as run:
             model = SVC(random_state=0, C = c, kernel = kernel)
             model.fit(sm_X_train, sm_y_train)
@@ -331,7 +555,7 @@ for c in [1, 0.5]:
 # COMMAND ----------
 
 param_grid_svm = {'C' : [0.01, 0.1, 0.2, 0.5, 1],
-                  'kernel': ['poly', 'rbf'],
+                  'kernel': ['linear','poly', 'rbf'],
                   'degree': [2, 3, 4, 5]
                  }
 
@@ -429,7 +653,9 @@ param_grid_rf = {'n_estimators' : [50, 100, 200, 250, 300],
 # COMMAND ----------
 
 rf = RandomForestClassifier(random_state=0)
-grid_search_rf = GridSearchCV(estimator = rf, param_grid = param_grid_rf, scoring = fbeta, cv = 10)
+# grid_search_rf = GridSearchCV(estimator = rf, param_grid = param_grid_rf, scoring = fbeta, cv = 10)
+cross_val_score(rf, sm_X_train, sm_y_train, scoring = fbeta).mean()
+
 
 # COMMAND ----------
 

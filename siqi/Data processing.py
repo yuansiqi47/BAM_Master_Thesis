@@ -47,8 +47,8 @@ from scipy.stats.mstats import winsorize
 # COMMAND ----------
 
 # load data
-financials = pd.read_csv("/dbfs/FileStore/Thesis data/raw data/compustat_financial_V2.csv")
-gdp =  pd.read_csv("/dbfs/FileStore/Thesis data/raw data/gdp_growth_rate_north_america.csv")
+financials = pd.read_csv("/dbfs/FileStore/Siqi thesis/raw data/compustat_financial_V2.csv")
+gdp =  pd.read_csv("/dbfs/FileStore/Siqi thesis/raw data/gdp_growth_rate_north_america.csv")
 
 # COMMAND ----------
 
@@ -184,6 +184,7 @@ predictors.isnull().sum()
 # COMMAND ----------
 
 # predictors = predictors.dropna(subset = ['gsector'])
+len(predictors)
 
 # COMMAND ----------
 
@@ -197,6 +198,10 @@ print(len(predictors.dropna()))
 
 predictors = predictors.dropna(thresh=23).reset_index(drop=True)
 len(predictors)
+
+# COMMAND ----------
+
+predictors.isnull().sum()
 
 # COMMAND ----------
 
@@ -214,7 +219,8 @@ def using_mstats(s):
     '''define a function to winsorize series in dataframe (90% winsorization)
         (sets all observations greater than the 95th percentile equal to the value at the 95th percentile 
         and all observations less than the 5th percentile equal to the value at the 5th percentile.)'''
-    return winsorize(s, limits=[0.05, 0.05])
+    s[s.notna()] = winsorize(s[s.notna()], limits=[0.05, 0.05])
+    return s
 
 # winsorize all predictors
 predictors.iloc[:,3:23] = predictors.iloc[:,3:23].apply(using_mstats, axis=0)
@@ -231,9 +237,9 @@ predictors.iloc[:,3:23].describe()
 # COMMAND ----------
 
 # load data
-delist = pd.read_csv("/dbfs/FileStore/Thesis data/raw data/delist_V2.csv")
-rating = pd.read_csv("/dbfs/FileStore/Thesis data/raw data/rating_V2.csv")
-link = pd.read_csv("/dbfs/FileStore/Thesis data/raw data/link.csv")
+delist = pd.read_csv("/dbfs/FileStore/Siqi thesis/raw data/delist_V2.csv")
+rating = pd.read_csv("/dbfs/FileStore/Siqi thesis/raw data/rating_V2.csv")
+link = pd.read_csv("/dbfs/FileStore/Siqi thesis/raw data/link.csv")
 
 # COMMAND ----------
 
@@ -471,7 +477,10 @@ len(df['gvkey'].unique())
 
 # COMMAND ----------
 
-df.describe().drop(columns = ['gvkey', 'fyear'])
+summary = df.describe().drop(columns = ['gvkey', 'fyear', 'default']).round(3).T
+summary['count'] = round((len(df) - summary['count'])/len(df)*100, 2).astype(str) + '%'
+summary = summary.rename(columns = {'count': 'NA'})
+print(summary.to_latex())
 
 # COMMAND ----------
 
@@ -484,12 +493,34 @@ df
 # COMMAND ----------
 
 # write csv file
-# df.to_csv('/dbfs/FileStore/Thesis data/df_V2.csv')
+# df.to_csv('/dbfs/FileStore/Siqi thesis/df_V2.csv')
 
 # COMMAND ----------
 
 import seaborn as sns
 import matplotlib.pyplot as plt
+
+# COMMAND ----------
+
+
+sns.violinplot(x=df["R2"])
+# also check boxplot
+
+
+# COMMAND ----------
+
+sum(df[df["R2"] > 55]['default'] == 1)
+
+# COMMAND ----------
+
+sum(df[df["R2"] > 55]['default'] == 0)
+
+# COMMAND ----------
+
+fig, heat_map = plt.subplots(figsize=(20,20))
+corr = df.drop(columns = ['gvkey', 'fyear', 'default']).corr()
+heat_map = sns.heatmap(corr, linewidth = 1 , annot = True)
+# drop P1 P2 E1
 
 # COMMAND ----------
 
@@ -518,28 +549,6 @@ df.groupby(['default','gsector'])['gsector'].count()
 # COMMAND ----------
 
 df.drop_duplicates(subset = ['gvkey'], keep = 'first').groupby(['default','gsector'])['gsector'].count()
-
-# COMMAND ----------
-
-fig, heat_map = plt.subplots(figsize=(20,20))
-corr = df.drop(columns = ['gvkey', 'fyear', 'gsector', 'default']).corr()
-heat_map = sns.heatmap(corr, linewidth = 1 , annot = True)
-# drop P1 P2 E1
-
-# COMMAND ----------
-
-
-sns.violinplot(x=predictors["G3"])
-# also check boxplot
-
-
-# COMMAND ----------
-
-sum(df[df["G3"] > 100]['default'] == 1)
-
-# COMMAND ----------
-
-sum(df[df["E3"] > 60]['default'] == 0)
 
 # COMMAND ----------
 
