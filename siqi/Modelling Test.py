@@ -18,11 +18,12 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from imblearn.over_sampling import SMOTE
 import matplotlib.pyplot as plt
 from sklearn.model_selection import validation_curve
+import mlflow
 
 # COMMAND ----------
 
 # load data
-df = pd.read_csv("/dbfs/FileStore/Siqi thesis/df_V2.csv")
+df = pd.read_csv("/dbfs/FileStore/Siqi thesis/df.csv")
 
 # COMMAND ----------
 
@@ -82,6 +83,7 @@ sm_y_train = np.asarray(sm_y_train['default'])
 # COMMAND ----------
 
 fbeta = make_scorer(fbeta_score, beta=2)
+metrics = {'fbeta': fbeta, 'accuracy':'accuracy', 'precision':'precision', 'recall':'recall'}
 
 # COMMAND ----------
 
@@ -136,14 +138,14 @@ evaluation
 
 # COMMAND ----------
 
-mlflow.autolog()
+mlflow.autolog(max_tuning_runs=None)
     
-parameters = {'n_estimators' : [100],
-              'max_depth': [4]}
+parameters = {'n_estimators' : [100, 200, 300, 400, 500, 1000],
+              'max_depth': [5, 10, 15, 20]}
 rf = RandomForestClassifier(random_state=0)
     
 with mlflow.start_run(run_name='rf_grid_search') as run:
-    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+    clf = GridSearchCV(rf, parameters, cv = 5, scoring = metrics, refit = 'fbeta')
     clf.fit(sm_X_train, sm_y_train)
 
 
@@ -154,46 +156,124 @@ best_rf.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
 
-mlflow.autolog()
+y_pred_rf = best_rf.predict(X_test)
+
+print(confusion_matrix(y_test, y_pred_rf))
+
+evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred_rf),
+                            precision_score(y_test, y_pred_rf),
+                            recall_score(y_test, y_pred_rf), 
+                            fbeta_score(y_test, y_pred_rf, beta = 2)]
+print(evaluation)
+
+pd_rf = best_rf.predict_proba(X_test)[:,1]
+print(pd_rf)
+
+# COMMAND ----------
+
+mlflow.autolog(max_tuning_runs=None)
     
-parameters = {'n_estimators' : [100, 200, 300, 500, 1000],
-              'max_depth': [4, 6, 8, 15, 30]}
-rf = RandomForestClassifier(random_state=0)
+parameters = {'n_estimators' : [50, 100, 150, 200, 250, 1000],
+              'max_depth': [2, 4, 6, 8],
+             'learning_rate': [0.01, 0.05, 0.1, 0.25, 0.5]}
+gb = GradientBoostingClassifier(random_state=0)
     
-with mlflow.start_run(run_name='rf_grid_search') as run:
-    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+with mlflow.start_run(run_name='gb_grid_search') as run:
+    clf = GridSearchCV(gb, parameters, cv = 5, scoring = metrics, refit = 'fbeta')
     clf.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
 
-mlflow.autolog()
+best_gb = clf.best_estimator_
+best_gb.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+y_pred_gb = best_gb.predict(X_test)
+
+print(confusion_matrix(y_test, y_pred_gb))
+
+evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred_gb),
+                            precision_score(y_test, y_pred_gb),
+                            recall_score(y_test, y_pred_gb), 
+                            fbeta_score(y_test, y_pred_gb, beta = 2)]
+print(evaluation)
+
+pd_gb = best_gb.predict_proba(X_test)[:,1]
+print(pd_gb)
+
+# COMMAND ----------
+
+mlflow.autolog(max_tuning_runs=None)
     
-parameters = {'n_estimators' : [100, 200, 300, 500, 1000],
-              'max_depth': [4, 6, 8, 15, 30]}
-rf = RandomForestClassifier(random_state=0)
+parameters = {'c' : [0.5, 1, 5, 10],
+              'kernel': ['rbf', 'poly'],
+              'degree': [3, 4, 5, 6]}
+
+svm = SVC(random_state=0)
     
-with mlflow.start_run(run_name='rf_grid_search') as run:
-    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+with mlflow.start_run(run_name='svm_grid_search') as run:
+    clf = GridSearchCV(svm, parameters, cv = 5, scoring = metrics, refit = 'fbeta')
     clf.fit(sm_X_train, sm_y_train)
 
 
 # COMMAND ----------
 
-mlflow.autolog()
+best_svm = clf.best_estimator_
+best_svm.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+y_pred_svm = best_svm.predict(X_test)
+
+print(confusion_matrix(y_test, y_pred_svm))
+
+evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred_svm),
+                            precision_score(y_test, y_pred_svm),
+                            recall_score(y_test, y_pred_svm), 
+                            fbeta_score(y_test, y_pred_svm, beta = 2)]
+print(evaluation)
+
+pd_svm = best_svm.predict_proba(X_test)[:,1]
+print(pd_svm)
+
+# COMMAND ----------
+
+mlflow.autolog(max_tuning_runs=None)
     
-parameters = {'n_estimators' : [100, 200, 300, 500, 1000],
-              'max_depth': [4, 6, 8, 15, 30]}
-rf = RandomForestClassifier(random_state=0)
+parameters = {'C' : [0.01, 0.1, 0.5, 1, 10, 20]}
+
+lasso = LogisticRegression(random_state=0, penalty = 'l1', solver = 'liblinear', max_iter=1000)
     
-with mlflow.start_run(run_name='rf_grid_search') as run:
-    clf = GridSearchCV(rf, parameters, cv = 5, scoring = fbeta)
+with mlflow.start_run(run_name='lasso_grid_search') as run:
+    clf = GridSearchCV(lasso, parameters, scoring = metrics, refit = 'fbeta')
     clf.fit(sm_X_train, sm_y_train)
 
 
 # COMMAND ----------
 
-# MAGIC %md 
-# MAGIC ### Gradient boosting
+best_lasso = SVC(**clf.best_params, probability = True)
+best_lasso.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+y_pred_lasso = best_lasso.predict(X_test)
+
+print(confusion_matrix(y_test, y_pred_lasso))
+
+evaluation.loc['Logistic regression (Lasso)', :] = [accuracy_score(y_test, y_pred_lasso),
+                                                    precision_score(y_test, y_pred_lasso),
+                                                    recall_score(y_test, y_pred_lasso), 
+                                                    fbeta_score(y_test, y_pred_lasso, beta = 2)]
+print(evaluation)
+
+pd_lasso = best_lasso.predict_proba(X_test)[:,1]
+print(pd_lasso)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## experiment with cross_val_score
 
 # COMMAND ----------
 
@@ -202,6 +282,7 @@ from sklearn.model_selection import cross_val_score
 
 # COMMAND ----------
 
+### gradient boosting
 for n in [50, 100, 150, 200, 250, 1000]:
     for d in [2, 4, 6, 8]:
         for l in [0.01, 0.05, 0.1, 0.25, 0.5]:
@@ -232,11 +313,7 @@ for n in [50, 100, 150, 200, 250, 1000]:
 
 # COMMAND ----------
 
-# MAGIC %md 
-# MAGIC ### Random Forest
-
-# COMMAND ----------
-
+### Random Forest
 for n in [100, 200, 300, 500, 1000]:
     for d in [4, 6, 8, 15, 30]:
         with mlflow.start_run(run_name='RF') as run:
@@ -261,503 +338,3 @@ for n in [100, 200, 300, 500, 1000]:
             mlflow.log_metric("recall", recall)
             mlflow.log_metric("fbeta", fbeta_score)
                     
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### SVM
-
-# COMMAND ----------
-
-for c in [1, 0.5]:
-    for kernel in ['poly', 'rbf']:
-        with mlflow.start_run(run_name='SVM') as run:
-            model = SVC(random_state=0, C = c, kernel = kernel)
-            model.fit(sm_X_train, sm_y_train)
-            y_pred = model.predict(X_test)
-            mlflow.log_param('penality', c)
-            mlflow.log_param('kernel', kernel)
-                    
-            accuracy = accuracy_score(y_test, y_pred)
-            precision = precision_score(y_test, y_pred)
-            recall = recall_score(y_test, y_pred)
-            fbeta = fbeta_score(y_test, y_pred, beta = 2)
-                    
-            mlflow.log_metric("accuracy", accuracy)
-            mlflow.log_metric("precision", precision)
-            mlflow.log_metric("recall", recall)
-            mlflow.log_metric("fbeta", fbeta)
-                    
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Old way of doing things
-
-# COMMAND ----------
-
-# MAGIC %md 
-# MAGIC ### Lasso penalized logistic regression
-
-# COMMAND ----------
-
-param_grid_lasso = {'C' : [0.001, 0.01, 0.1, 0.2, 0.5, 1]}
-                   #'l1_ratio': [0, 0.25, 0.5, 0.75, 1]}
-
-# COMMAND ----------
-
-lasso = LogisticRegression(random_state=0, penalty = 'l1', solver = 'liblinear', max_iter=1000)
-grid_search_lasso = GridSearchCV(estimator = lasso, param_grid = param_grid_lasso, scoring = fbeta, cv = 10)
-
-# COMMAND ----------
-
-grid_search_lasso.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-best_lasso = grid_search_lasso.best_estimator_
-best_lasso.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-grid_search_lasso.best_score_
-
-# COMMAND ----------
-
-y_pred = best_lasso.predict(X_test)
-
-# COMMAND ----------
-
-confusion_matrix(y_test, y_pred)
-
-# COMMAND ----------
-
-evaluation.loc['Logistic regression (Lasso)', :] = [accuracy_score(y_test, y_pred),
-                                                       precision_score(y_test, y_pred), 
-                                                       recall_score(y_test, y_pred), 
-                                                       fbeta_score(y_test, y_pred, beta = 2)]
-evaluation
-
-# COMMAND ----------
-
-grid_search_lasso.cv_results_
-
-# COMMAND ----------
-
-# MAGIC %md 
-# MAGIC ### Support Vector Machine
-
-# COMMAND ----------
-
-param_grid_svm = {'C' : [0.1, 1, 10, 100],
-                  'kernel': ['poly', 'rbf'],
-                  'degree': [3, 5, 7, 9]
-                 }
-
-# COMMAND ----------
-
-svm = SVC(random_state = 0)
-grid_search_svm = GridSearchCV(estimator = svm, param_grid = param_grid_svm, scoring = fbeta, cv = 10)
-
-# COMMAND ----------
-
-# sm_X_train2, sm_X_test2, sm_y_train2, sm_y_test2 = train_test_split(sm_X_train, sm_y_train, stratify = sm_y_train, test_size = 0.9, random_state=0)
-
-# COMMAND ----------
-
-grid_search_svm.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-grid_search_svm.best_score_
-
-# COMMAND ----------
-
-best_svm = grid_search_svm.best_estimator_
-best_svm.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-y_pred = best_svm.predict(X_test)
-
-# COMMAND ----------
-
-confusion_matrix(y_test, y_pred)
-
-# COMMAND ----------
-
-evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred),
-                            precision_score(y_test, y_pred), 
-                            recall_score(y_test, y_pred),
-                            fbeta_score(y_test, y_pred, beta = 2)]
-evaluation
-
-# COMMAND ----------
-
-grid_search_svm.cv_results_
-
-# COMMAND ----------
-
-# MAGIC %md 
-# MAGIC ### Random Forest
-
-# COMMAND ----------
-
-param_grid_rf = {'n_estimators' : [100, 200, 300, 400, 500],
-                  'max_depth': [5, 10, 15, 20, 25],
-                  'min_samples_split': [25, 50, 75],
-                  'min_samples_leaf': [10, 20, 30]
-                 }
-
-# COMMAND ----------
-
-rf = RandomForestClassifier(random_state=0)
-grid_search_rf = GridSearchCV(estimator = rf, param_grid = param_grid_rf, scoring = fbeta, cv = 10)
-
-# COMMAND ----------
-
-grid_search_rf.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-grid_search_rf.best_score_
-
-# COMMAND ----------
-
-best_rf = grid_search_rf.best_estimator_
-best_rf.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-y_pred = best_rf.predict(X_test)
-
-# COMMAND ----------
-
-confusion_matrix(y_test, y_pred)
-
-# COMMAND ----------
-
-evaluation.loc['Random Forest', :] = [accuracy_score(y_test, y_pred),
-                                      precision_score(y_test, y_pred), 
-                                      recall_score(y_test, y_pred),
-                                      fbeta_score(y_test, y_pred, beta = 2)]
-evaluation
-
-# COMMAND ----------
-
-grid_search_rf.cv_results_
-
-# COMMAND ----------
-
-# MAGIC %md 
-# MAGIC ### Gradient boosting
-
-# COMMAND ----------
-
-param_grid_gb = {'n_estimators' : [50, 100, 150, 200],
-                  'max_depth': [2, 3, 4, 5, 6],
-                  'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2]
-                 }
-
-# COMMAND ----------
-
-gb = GradientBoostingClassifier(random_state=0)
-grid_search_gb = GridSearchCV(estimator = gb, param_grid = param_grid_gb, scoring = fbeta, cv = 10)
-
-# COMMAND ----------
-
-grid_search_gb.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-grid_search_gb.best_score_
-
-# COMMAND ----------
-
-best_gb = grid_search_gb.best_estimator_
-best_gb.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-y_pred = best_gb.predict(X_test)
-
-# COMMAND ----------
-
-confusion_matrix(y_test, y_pred)
-
-# COMMAND ----------
-
-evaluation.loc['Gradient Boosting', :] = [accuracy_score(y_test, y_pred),
-                                          precision_score(y_test, y_pred), 
-                                          recall_score(y_test, y_pred),
-                                          fbeta_score(y_test, y_pred, beta = 2)]
-evaluation
-
-# COMMAND ----------
-
-grid_search_gb.cv_results_
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Legacy
-
-# COMMAND ----------
-
-import mlflow
-import numpy as np
-import pandas as pd
-import sklearn.datasets
-import sklearn.metrics
-import sklearn.model_selection
-import sklearn.ensemble
-
-# Enable MLflow autologging for this notebook
-mlflow.autolog()
-
-# COMMAND ----------
-
-# load data
-df = pd.read_csv("/dbfs/FileStore/Thesis data/df_V2.csv")
-df = df.drop(columns = ['P1','P2', 'E1'])
-df = df.iloc[:,1:]
-df = df.dropna(axis=0, how='any')
-X = df.drop(['gvkey', 'fyear','datadate', 'default','default_date', 'gsector'], axis = 1)
-y = df['default']
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, stratify = df['default'], test_size = 0.3, random_state=0)
-
-#X_train = X_train.sample(frac=1,  random_state=42).reset_index(drop=True)
-#y_train = y_train.sample(frac=1,  random_state=42).reset_index(drop=True)
-
-# COMMAND ----------
-
-with mlflow.start_run(run_name='gradient_boost') as run:
- # model = sklearn.ensemble.GradientBoostingClassifier(random_state=0)
-
-  param_grid_gb = {'n_estimators' : [50, 100, 200, 300],
-                  'max_depth': [1, 2, 4, 6, 10],
-                  'learning_rate': [ 0.01, 0.1, 0.5]
-                 }
-  gb = sklearn.ensemble.GradientBoostingClassifier(random_state=0)
-
-  grid_search_gb = GridSearchCV(estimator = gb, param_grid = param_grid_gb, scoring = scoring_metrics, refit = False,
-                           cv = 10, n_jobs = -1, return_train_score =True)
-  # Models, parameters, and training metrics are tracked automatically
-  grid_search_gb.fit(sm_X_train, sm_y_train)
-
-  predicted_probs = model.predict_proba(X_test)
-  roc_auc = sklearn.metrics.roc_auc_score(y_test, predicted_probs[:,1])
-  
-  # The AUC score on test data is not automatically logged, so log it manually
-  mlflow.log_metric("test_auc", roc_auc)
-  print("Test AUC of: {}".format(roc_auc))
-
-# COMMAND ----------
-
-from time import time
-
-# COMMAND ----------
-
-def train_predict(learner, sample_size, X_train, y_train, X_test, y_test): 
-    '''
-    inputs:
-       - learner: the learning algorithm to be trained and predicted on
-       - sample_size: the size of samples (number) to be drawn from training set
-       - X_train: features training set
-       - y_train: income training set
-       - X_test: features testing set
-       - y_test: income testing set
-    '''
-    
-    results = {}
-    
-    # Fit the learner to the training data using slicing with 'sample_size' using .fit(training_features[:], training_labels[:])
-    start = time() # Get start time
-    learner = learner.fit(X_train[:sample_size], y_train[:sample_size])
-    end = time() # Get end time
-    
-    # Calculate the training time
- #   results['train_time'] = end - start
-        
-    # Get the predictions on the test set(X_test),
-    # then get predictions on the first 300 training samples(X_train) using .predict()
-    start = time() # Get start time
-    predictions_test = learner.predict(X_test)
-    predictions_train = learner.predict(X_train[:300])
-    end = time() # Get end time
-    
-    # Calculate the total prediction time
-#    results['pred_time'] = end - start
-            
-    # Compute accuracy on the first 300 training samples which is y_train[:300]
-#    results['acc_train'] = accuracy_score(y_train[:300], predictions_train)
-        
-    # Compute accuracy on test set using accuracy_score()
-    results['acc_test'] = accuracy_score(y_test, predictions_test)
-    
-    # Compute F-score on the the first 300 training samples using fbeta_score()
- #   results['f_train'] = fbeta_score(y_train[:300], predictions_train[:300], beta =2)
-        
-    # Compute F-score on the test set which is y_test
-    results['f_test'] = fbeta_score(y_test, predictions_test, beta = 2)
-       
-    # Success
-    print("{} trained on {} samples.".format(learner.__class__.__name__, sample_size))
-        
-    # Return the results
-    return results
-
-# COMMAND ----------
-
-# Initialize the three models
-clf_1 = SVC(random_state=0)
-clf_2 = RandomForestClassifier(random_state=0)
-clf_3 = GradientBoostingClassifier(random_state=0)
-clf_4 = LogisticRegression(random_state=0)
-
-# Calculate the number of samples for 0.01%, 0.1%, 1%, 10%, and 100% of the training data
-samples_100 = len(y_train)
-samples_10 = int(0.1*len(y_train))
-samples_1 = int(0.01*len(y_train))
-samples_01 = int(0.001*len(y_train))
-samples_001 = int(0.0001*len(y_train))
-
-# Collect results on the learners
-results = {}
-for clf in [clf_1, clf_2, clf_3, clf_4]:
-    clf_name = clf.__class__.__name__
-    results[clf_name] = train_predict(clf, samples_100, sm_X_train, sm_y_train, X_test, y_test)
-#    results[clf_name] = {}
- #   for i, samples in enumerate([samples_001, samples_01, samples_1]):
-  #      results[clf_name][i] = \
-   #     train_predict(clf, samples, sm_X_train, sm_y_train, X_test, y_test)
-
-
-
-# COMMAND ----------
-
-results
-
-# COMMAND ----------
-
-# MAGIC %md 
-# MAGIC ### Lasso penalized logistic regression
-
-# COMMAND ----------
-
-param_grid_lasso = {'C' : [0.0001, 0.001, 0.01, 0.1, 0.2, 0.5, 1]}
-
-# COMMAND ----------
-
-lr = LogisticRegression(random_state=0, penalty = 'l2', l1_ratio=0)
-grid_search = GridSearchCV(estimator = lr, param_grid = param_grid_lasso, scoring = scoring_metrics, refit = False,
-                           cv = 10, return_train_score =True)
-
-# COMMAND ----------
-
-grid_search.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-param_range = np.array(list(param_grid_lasso.values())[0])
-
-# COMMAND ----------
-
-def validation_curve(name, hyperparameter, param_range):
-    accuracy = grid_search.cv_results_['mean_test_accuracy']
-    accuracy_std = grid_search.cv_results_['std_test_accuracy']
-    precision = grid_search.cv_results_['mean_test_precision']
-    precision_std = grid_search.cv_results_['std_test_precision']
-    recall = grid_search.cv_results_['mean_test_recall']
-    recall_std = grid_search.cv_results_['std_test_recall']
-    f1 = grid_search.cv_results_['mean_test_f1']
-    f1_std = grid_search.cv_results_['std_test_f1']
-    roc_auc = grid_search.cv_results_['mean_test_roc_auc']
-    roc_auc_std = grid_search.cv_results_['std_test_roc_auc']
-
-    plt.title("Validation Curve" + name)
-    plt.xlabel(hyperparameter)
-    plt.ylabel("Score")
-    plt.ylim(0.7, 0.9)
-    lw = 2
-    plt.semilogx(
-        param_range, accuracy, label="accuracy", color="darkorange", lw=lw
-    )
-    plt.fill_between(
-        param_range,
-        accuracy - accuracy_std ,
-        accuracy + accuracy_std ,
-        alpha=0.2,
-        color="darkorange",
-        lw=lw,
-    )
-    plt.semilogx(
-        param_range, precision, label="precision", color="navy", lw=lw
-    )
-    plt.fill_between(
-        param_range,
-        precision - precision_std,
-        precision + precision_std,
-        alpha=0.2,
-        color="navy",
-        lw=lw,
-    )
-    plt.semilogx(
-        param_range, recall, label="recall", color="darkviolet", lw=lw
-    )
-    plt.fill_between(
-        param_range,
-        recall - recall_std,
-        recall + recall_std,
-        alpha=0.2,
-        color="darkviolet",
-        lw=lw,
-    )
-    plt.semilogx(
-        param_range, f1, label="f1", color="olive", lw=lw
-    )
-    plt.fill_between(
-        param_range,
-        f1 - f1_std,
-        f1 + f1_std,
-        alpha=0.2,
-        color="olive",
-        lw=lw,
-    )
-    plt.semilogx(
-        param_range, roc_auc, label="roc_auc", color="darkred", lw=lw
-    )
-    plt.fill_between(
-        param_range,
-        roc_auc - roc_auc_std,
-        roc_auc + roc_auc_std,
-        alpha=0.2,
-        color="darkred",
-        lw=lw,
-    )
-    plt.legend(loc="best")
-    plt.show()
-
-
-# COMMAND ----------
-
-validation_curve('Lasso', 'Penalty', param_range)
-
-# COMMAND ----------
-
-lr = LogisticRegression(random_state=0, penalty = 'l2', l1_ratio=0, C = 0.001)
-lr.fit(sm_X_train, sm_y_train)
-
-# COMMAND ----------
-
-y_pred = lr.predict(X_test)
-
-# COMMAND ----------
-
-confusion_matrix(y_test, y_pred)

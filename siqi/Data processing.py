@@ -493,7 +493,7 @@ df
 # COMMAND ----------
 
 # write csv file
-# df.to_csv('/dbfs/FileStore/Siqi thesis/df_V2.csv')
+df.to_csv('/dbfs/FileStore/Siqi thesis/df.csv')
 
 # COMMAND ----------
 

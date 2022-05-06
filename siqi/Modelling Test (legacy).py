@@ -113,11 +113,11 @@ lr.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
 
-y_pred = lr.predict(X_test)
+y_pred_lr = lr.predict(X_test)
 
 # COMMAND ----------
 
-confusion_matrix(y_test, y_pred)
+confusion_matrix(y_test, y_pred_lr)
 
 # COMMAND ----------
 
@@ -127,11 +127,27 @@ evaluation = pd.DataFrame(columns = ['accuracy', 'precision', 'recall', 'F-beta'
 
 # COMMAND ----------
 
-evaluation.loc['Logistic regression (baseline)', :] = [accuracy_score(y_test, y_pred),
-                                                       precision_score(y_test, y_pred), 
-                                                       recall_score(y_test, y_pred), 
-                                                       fbeta_score(y_test, y_pred, beta = 2)]
+evaluation.loc['Logistic regression (baseline)', :] = [accuracy_score(y_test, y_pred_lr),
+                                                       precision_score(y_test, y_pred_lr), 
+                                                       recall_score(y_test, y_pred_lr), 
+                                                       fbeta_score(y_test, y_pred_lr, beta = 2)]
 evaluation
+
+# COMMAND ----------
+
+pd_lr = lr.predict_proba(X_test)[:,1]
+print(pd_lr)
+
+# COMMAND ----------
+
+df_pd = df.iloc[y_test.index][['gvkey', 'datadate', 'fyear', 'default', 'default_date']].reset_index(drop=True) 
+df_pd = pd.concat([df_pd, pd.DataFrame(y_pred_lr, columns=['pred_lr'])], axis = 1)
+df_pd = pd.concat([df_pd, pd.DataFrame(pd_lr, columns=['pd_lr'])], axis = 1)
+df_pd
+
+# COMMAND ----------
+
+df_pd.to_csv('/dbfs/FileStore/Siqi thesis/df_pd.csv')
 
 # COMMAND ----------
 
