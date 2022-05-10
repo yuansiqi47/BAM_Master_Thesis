@@ -1,8 +1,4 @@
 # Databricks notebook source
-pip install imbalanced-learn
-
-# COMMAND ----------
-
 # Import packages
 import pandas as pd
 import numpy as np
@@ -281,18 +277,18 @@ best_svm.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
 
-y_pred = best_svm.predict(X_test)
+y_pred_svm = best_svm.predict(X_test)
 
 # COMMAND ----------
 
-confusion_matrix(y_test, y_pred)
+confusion_matrix(y_test, y_pred_svm)
 
 # COMMAND ----------
 
-evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred),
-                            precision_score(y_test, y_pred),
-                            recall_score(y_test, y_pred), 
-                            fbeta_score(y_test, y_pred, beta = 2)]
+evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred_svm),
+                            precision_score(y_test, y_pred_svm),
+                            recall_score(y_test, y_pred_svm), 
+                            fbeta_score(y_test, y_pred_svm, beta = 2)]
 evaluation
 
 # COMMAND ----------
@@ -303,61 +299,101 @@ pd_svm
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## GB
-
-# COMMAND ----------
-
-from sklearn.model_selection import cross_val_score
-from hyperopt import fmin, tpe, hp, SparkTrials, STATUS_OK, Trials
-import mlflow
-
-# COMMAND ----------
-
-def objective(params):
-    classifier_type = params['type']
-    del params['type']
-    if classifier_type == 'svm':
-        clf = SVC(**params, random_state = 0)
-    elif classifier_type == 'rf':
-        clf = RandomForestClassifier(**params, random_state = 0)
-    elif classifier_type == 'logreg':
-        clf = LogisticRegression(**params, random_state = 0, penalty = 'l1')
-    elif classifier_type == 'gb':
-        clf = GradientBoostingClassifier(**params, random_state = 0)
-    else:
-        return 0
-    fbeta_score = cross_val_score(clf, sm_X_train, sm_y_train, scoring = fbeta).mean()
-    
-    # Because fmin() tries to minimize the objective, this function must return the negative accuracy. 
-    return {'loss': -fbeta_score, 'status': STATUS_OK}
+# MAGIC ## Random Forest
 
 # COMMAND ----------
 
 algo=tpe.suggest
+spark_trials = SparkTrials(parallelism = 32, timeout = 36000)
 
 # COMMAND ----------
 
-spark_trials = SparkTrials(parallelism = 32)
-
-# COMMAND ----------
-
-search_space_gb = {
-        'type': 'gb',
-        'n_estimators' : hp.quniform('GB_n_estimators', 50, 500, 50),
-#        'max_depth': hp.quniform('GB_max_depth', 4, 20, 4),
- #       'learning_rate': hp.lognormal('learning_rate', 0, 1.0)
+search_space_rf = {
+    'type': 'rf',
+    'n_estimators' : hp.randint('rf_n_estimators', 1000),
+    'max_depth': hp.quniform('rf_max_depth', 1, 10, 1),
+    'min_samples_split': hp.uniform('rf_min_samples_split', 0, 0.5),
+    'min_samples_leaf': hp.uniform('rf_min_samples_leaf', 0, 0.5)
     }
 
 
 # COMMAND ----------
 
 with mlflow.start_run():
-#    mlflow.log_metric("fbeta", fbeta_score)
+    best_result = fmin(
+        fn=objective, 
+        space=search_space_rf,
+        algo=algo,
+        max_evals=32,
+        trials=spark_trials)
+
+# COMMAND ----------
+
+import hyperopt
+print(hyperopt.space_eval(search_space_rf, best_result))
+
+
+# COMMAND ----------
+
+para_rf = hyperopt.space_eval(search_space_rf, best_result)
+del para_rf['type']
+best_rf = RandomForestClassifier(**para_rf, random_state = 0)
+
+# COMMAND ----------
+
+best_rf.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+y_pred_rf = best_rf.predict(X_test)
+
+# COMMAND ----------
+
+confusion_matrix(y_test, y_pred_rf)
+
+# COMMAND ----------
+
+evaluation.loc['Random Forest', :] = [accuracy_score(y_test, y_pred_rf),
+                            precision_score(y_test, y_pred_rf),
+                            recall_score(y_test, y_pred_rf), 
+                            fbeta_score(y_test, y_pred_rf, beta = 2)]
+evaluation
+
+# COMMAND ----------
+
+pd_rf = best_rf.predict_proba(X_test)[:,1]
+pd_rf
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## GB
+
+# COMMAND ----------
+
+algo=tpe.suggest
+spark_trials = SparkTrials(parallelism = 32, timeout = 36000)
+
+# COMMAND ----------
+
+search_space_gb = {
+    'type': 'gb',
+    'n_estimators' : hp.randint('gb_n_estimators', 500),
+    'max_depth': hp.quniform('gb_max_depth', 1, 10, 1),
+    'learning_rate': hp.lognormal('learning_rate', 0, 1.0),
+    'min_samples_split': hp.uniform('gb_min_samples_split', 0, 0.5),
+    'min_samples_leaf': hp.uniform('gb_min_samples_leaf', 0, 0.5)
+    }
+
+
+# COMMAND ----------
+
+with mlflow.start_run():
     best_result = fmin(
         fn=objective, 
         space=search_space_gb,
         algo=algo,
-        max_evals=10,
+        max_evals=32,
         trials=spark_trials)
 
 # COMMAND ----------
@@ -368,7 +404,54 @@ print(hyperopt.space_eval(search_space_gb, best_result))
 
 # COMMAND ----------
 
+para_gb = hyperopt.space_eval(search_space_gb, best_result)
+del para_gb['type']
+best_gb = GradientBoostingClassifier(**para_gb, random_state = 0)
 
+# COMMAND ----------
+
+best_gb.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+y_pred_gb = best_gb.predict(X_test)
+
+# COMMAND ----------
+
+confusion_matrix(y_test, y_pred_gb)
+
+# COMMAND ----------
+
+evaluation.loc['Gradient Boosting', :] = [accuracy_score(y_test, y_pred_gb),
+                            precision_score(y_test, y_pred_gb),
+                            recall_score(y_test, y_pred_gb), 
+                            fbeta_score(y_test, y_pred_gb, beta = 2)]
+evaluation
+
+# COMMAND ----------
+
+pd_gb = best_gb.predict_proba(X_test)[:,1]
+pd_gb
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+df_pd = df.iloc[y_test.index][['gvkey', 'datadate', 'fyear', 'default', 'default_date']].reset_index(drop=True) 
+col_list = [y_pred_lr, pd_lr, y_pred_lasso, pd_lasso, y_pred_svm, pd_svm, y_pred_rf, pd_rf, y_pred_gb, pd_gb]
+
+for col in col_list:
+    df_pd = pd.concat([df_pd, pd.DataFrame(col)], axis = 1)
+    
+df_pd.columns = ['gvkey', 'datadate', 'fyear', 'default', 'default_date','pred_lr','pd_lr',
+                 'pred_lasso','pd_lasso','pred_svm','pd_svm','pred_rf','pd_rf','pred_gb','pd_gb']
+df_pd
+
+# COMMAND ----------
+
+df_pd.to_csv('/dbfs/FileStore/Siqi thesis/df_pd.csv')
 
 # COMMAND ----------
 
@@ -380,7 +463,54 @@ print(hyperopt.space_eval(search_space_gb, best_result))
 
 # COMMAND ----------
 
+rf =  RandomForestClassifier(
+  bootstrap=False,
+  criterion="entropy",
+  max_depth=2,
+  max_features=0.8090857497321342,
+  min_samples_leaf=5.5104164956992774e-05,
+  min_samples_split=0.1965917120474412,
+  n_estimators=3,
+  random_state=842397141,
+)
+rf.fit(sm_X_train, sm_y_train)
 
+y_pred = rf.predict(sm_X_train)
+eva = [accuracy_score(sm_y_train, y_pred),
+       precision_score(sm_y_train, y_pred),
+       recall_score(sm_y_train, y_pred),
+       fbeta_score(sm_y_train, y_pred, beta = 2)]
+eva
+
+# COMMAND ----------
+
+rf =  RandomForestClassifier(
+  bootstrap=False,
+  criterion="entropy",
+  max_depth=15,
+#  max_features=0.8090857497321342,
+ # min_samples_leaf=5.5104164956992774e-05,
+  #min_samples_split=0.1965917120474412,
+  n_estimators=500,
+  random_state=842397141,
+)
+rf.fit(sm_X_train, sm_y_train)
+
+y_pred = rf.predict(sm_X_train)
+eva = [accuracy_score(sm_y_train, y_pred),
+       precision_score(sm_y_train, y_pred),
+       recall_score(sm_y_train, y_pred),
+       fbeta_score(sm_y_train, y_pred, beta = 2)]
+eva
+
+# COMMAND ----------
+
+y_pred = rf.predict(X_test)
+eva = [accuracy_score(y_test, y_pred),
+       precision_score(y_test, y_pred),
+       recall_score(y_test, y_pred),
+       fbeta_score(y_test, y_pred, beta = 2)]
+eva
 
 # COMMAND ----------
 

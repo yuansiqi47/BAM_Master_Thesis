@@ -141,8 +141,10 @@ print(pd_lr)
 # COMMAND ----------
 
 df_pd = df.iloc[y_test.index][['gvkey', 'datadate', 'fyear', 'default', 'default_date']].reset_index(drop=True) 
-df_pd = pd.concat([df_pd, pd.DataFrame(y_pred_lr, columns=['pred_lr'])], axis = 1)
-df_pd = pd.concat([df_pd, pd.DataFrame(pd_lr, columns=['pd_lr'])], axis = 1)
+col_list = [y_pred_lr, pd_lr]
+for col in col_list:
+    df_pd = pd.concat([df_pd, pd.DataFrame(col)], axis = 1)
+df_pd.columns = ['gvkey', 'datadate', 'fyear', 'default', 'default_date','pred_lr', 'pd_lr']
 df_pd
 
 # COMMAND ----------
@@ -441,6 +443,18 @@ param_grid_rf = {'n_estimators' : [50, 100, 200, 250, 300],
                   'min_samples_split': [20, 50, 100],
                   'min_samples_leaf': [10, 20, 50]
                  }
+rf = RandomForestClassifier(random_state=0)
+grid_search_rf = GridSearchCV(estimator = rf, param_grid = param_grid_rf, scoring = fbeta, cv = 10)
+grid_search_rf.fit(X_train, y_train)
+grid_search_rf.best_score_
+best_rf = grid_search_rf.best_estimator_
+best_rf.fit(X_train, y_train)
+y_pred = best_rf.predict(X_test)
+eva = [accuracy_score(y_test, y_pred),
+       precision_score(y_test, y_pred),
+       recall_score(y_test, y_pred),
+       fbeta_score(y_test, y_pred, beta = 2)]
+eva
 
 # COMMAND ----------
 

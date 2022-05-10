@@ -78,12 +78,72 @@ sm_y_train = sm_y_train.sample(frac=1,  random_state=42).reset_index(drop=True)
 
 # COMMAND ----------
 
+df_train = pd.concat([sm_X_train, sm_y_train], axis = 1)
+df_test = pd.concat([X_test, y_test], axis = 1)
+df_train
+
+# COMMAND ----------
+
+spark_df = spark.createDataFrame(df_train)
+
+spark_df.write.mode("overwrite").saveAsTable("df_train")
+
+# COMMAND ----------
+
+spark_df = spark.createDataFrame(df_test)
+
+spark_df.write.mode("overwrite").saveAsTable("df_test")
+
+# COMMAND ----------
+
 sm_y_train = np.asarray(sm_y_train['default'])
 
 # COMMAND ----------
 
 fbeta = make_scorer(fbeta_score, beta=2)
 metrics = {'fbeta': fbeta, 'accuracy':'accuracy', 'precision':'precision', 'recall':'recall'}
+
+# COMMAND ----------
+
+rf =  RandomForestClassifier(
+  bootstrap=False,
+  criterion="entropy",
+  max_depth=2,
+  max_features=0.8090857497321342,
+  min_samples_leaf=5.5104164956992774e-05,
+  min_samples_split=0.1965917120474412,
+  n_estimators=3,
+  random_state=842397141,
+)
+rf.fit(sm_X_train, sm_y_train)
+
+y_pred = rf.predict(X_test)
+eva = [accuracy_score(y_test, y_pred),
+       precision_score(y_test, y_pred),
+       recall_score(y_test, y_pred),
+       fbeta_score(y_test, y_pred, beta = 2)]
+eva
+
+# COMMAND ----------
+
+rf =  RandomForestClassifier(
+  bootstrap=False,
+  criterion="entropy",
+  max_depth=15,
+#  max_features=0.8090857497321342,
+ # min_samples_leaf=5.5104164956992774e-05,
+  #min_samples_split=0.1965917120474412,
+  n_estimators=500,
+  random_state=842397141,
+)
+rf.fit(sm_X_train, sm_y_train)
+
+y_pred = rf.predict(X_test)
+eva = [accuracy_score(y_test, y_pred),
+       precision_score(y_test, y_pred),
+       recall_score(y_test, y_pred),
+       fbeta_score(y_test, y_pred, beta = 2)]
+eva
 
 # COMMAND ----------
 
@@ -138,10 +198,12 @@ evaluation
 
 # COMMAND ----------
 
-mlflow.autolog(max_tuning_runs=None)
+mlflow.sklearn.autolog(max_tuning_runs=None)
     
-parameters = {'n_estimators' : [100, 200, 300, 400, 500, 1000],
-              'max_depth': [5, 10, 15, 20]}
+parameters = {'n_estimators' : [100, 250, 500, 750, 1000],
+              'max_depth': [3, 5, 7, 9],
+             'min_samples_split': [100, 200, 300],
+             'min_samples_leaf': [25, 50, 75, 100]}
 rf = RandomForestClassifier(random_state=0)
     
 with mlflow.start_run(run_name='rf_grid_search') as run:
@@ -160,7 +222,7 @@ y_pred_rf = best_rf.predict(X_test)
 
 print(confusion_matrix(y_test, y_pred_rf))
 
-evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred_rf),
+evaluation.loc['Random Forest', :] = [accuracy_score(y_test, y_pred_rf),
                             precision_score(y_test, y_pred_rf),
                             recall_score(y_test, y_pred_rf), 
                             fbeta_score(y_test, y_pred_rf, beta = 2)]
@@ -171,7 +233,27 @@ print(pd_rf)
 
 # COMMAND ----------
 
-mlflow.autolog(max_tuning_runs=None)
+param_grid_rf = {'n_estimators' : [100, 250, 500, 750, 1000],
+                  'max_depth': [3, 5, 7, 9],
+                  'min_samples_split': [100, 200, 300],
+                  'min_samples_leaf': [25, 50, 75, 100]
+                 }
+rf = RandomForestClassifier(random_state=0)
+grid_search_rf = GridSearchCV(estimator = rf, param_grid = param_grid_rf, scoring = metrics, refit = 'fbeta')
+grid_search_rf.fit(X_train, y_train)
+print(grid_search_rf.best_score_)
+best_rf = grid_search_rf.best_estimator_
+best_rf.fit(X_train, y_train)
+y_pred = best_rf.predict(X_test)
+eva = [accuracy_score(y_test, y_pred),
+       precision_score(y_test, y_pred),
+       recall_score(y_test, y_pred),
+       fbeta_score(y_test, y_pred, beta = 2)]
+eva
+
+# COMMAND ----------
+
+mlflow.sklearn.autolog(max_tuning_runs=None)
     
 parameters = {'n_estimators' : [50, 100, 150, 200, 250, 1000],
               'max_depth': [2, 4, 6, 8],
@@ -193,7 +275,7 @@ y_pred_gb = best_gb.predict(X_test)
 
 print(confusion_matrix(y_test, y_pred_gb))
 
-evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred_gb),
+evaluation.loc['Gradient Boosting', :] = [accuracy_score(y_test, y_pred_gb),
                             precision_score(y_test, y_pred_gb),
                             recall_score(y_test, y_pred_gb), 
                             fbeta_score(y_test, y_pred_gb, beta = 2)]
@@ -204,7 +286,7 @@ print(pd_gb)
 
 # COMMAND ----------
 
-mlflow.autolog(max_tuning_runs=None)
+mlflow.sklearn.autolog(max_tuning_runs=None)
     
 parameters = {'c' : [0.5, 1, 5, 10],
               'kernel': ['rbf', 'poly'],
@@ -239,7 +321,7 @@ print(pd_svm)
 
 # COMMAND ----------
 
-mlflow.autolog(max_tuning_runs=None)
+mlflow.sklearn.autolog(max_tuning_runs=None)
     
 parameters = {'C' : [0.01, 0.1, 0.5, 1, 10, 20]}
 
