@@ -1,8 +1,4 @@
 # Databricks notebook source
-pip install imbalanced-learn
-
-# COMMAND ----------
-
 # Import packages
 import pandas as pd
 import numpy as np
@@ -78,21 +74,21 @@ sm_y_train = sm_y_train.sample(frac=1,  random_state=42).reset_index(drop=True)
 
 # COMMAND ----------
 
-df_train = pd.concat([sm_X_train, sm_y_train], axis = 1)
-df_test = pd.concat([X_test, y_test], axis = 1)
-df_train
+#df_train = pd.concat([sm_X_train, sm_y_train], axis = 1)
+#df_test = pd.concat([X_test, y_test], axis = 1)
+#df_train
 
 # COMMAND ----------
 
-spark_df = spark.createDataFrame(df_train)
+#spark_df = spark.createDataFrame(df_train)
 
-spark_df.write.mode("overwrite").saveAsTable("df_train")
+#spark_df.write.mode("overwrite").saveAsTable("df_train")
 
 # COMMAND ----------
 
-spark_df = spark.createDataFrame(df_test)
+#spark_df = spark.createDataFrame(df_test)
 
-spark_df.write.mode("overwrite").saveAsTable("df_test")
+#spark_df.write.mode("overwrite").saveAsTable("df_test")
 
 # COMMAND ----------
 
@@ -133,7 +129,21 @@ rf =  RandomForestClassifier(
 #  max_features=0.8090857497321342,
  # min_samples_leaf=5.5104164956992774e-05,
   #min_samples_split=0.1965917120474412,
-  n_estimators=500,
+  n_estimators = 1000,
+  random_state=842397141,
+)
+rf.fit(sm_X_train, sm_y_train)
+
+y_pred = rf.predict(X_test)
+eva = [accuracy_score(y_test, y_pred),
+       precision_score(y_test, y_pred),
+       recall_score(y_test, y_pred),
+       fbeta_score(y_test, y_pred, beta = 2)]
+eva
+
+# COMMAND ----------
+
+rf =  RandomForestClassifier(
   random_state=842397141,
 )
 rf.fit(sm_X_train, sm_y_train)

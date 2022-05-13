@@ -1,4 +1,8 @@
 # Databricks notebook source
+pip install lime
+
+# COMMAND ----------
+
 # Import packages
 import pandas as pd
 import numpy as np
@@ -311,9 +315,7 @@ spark_trials = SparkTrials(parallelism = 32, timeout = 36000)
 search_space_rf = {
     'type': 'rf',
     'n_estimators' : hp.randint('rf_n_estimators', 1000),
-    'max_depth': hp.quniform('rf_max_depth', 1, 10, 1),
-    'min_samples_split': hp.uniform('rf_min_samples_split', 0, 0.5),
-    'min_samples_leaf': hp.uniform('rf_min_samples_leaf', 0, 0.5)
+    'max_depth': hp.quniform('rf_max_depth', 1, 20, 1)
     }
 
 
@@ -324,7 +326,7 @@ with mlflow.start_run():
         fn=objective, 
         space=search_space_rf,
         algo=algo,
-        max_evals=32,
+        max_evals=100,
         trials=spark_trials)
 
 # COMMAND ----------
@@ -341,6 +343,7 @@ best_rf = RandomForestClassifier(**para_rf, random_state = 0)
 
 # COMMAND ----------
 
+#best_rf = RandomForestClassifier(max_depth=20.0, n_estimators=591, random_state=0)
 best_rf.fit(sm_X_train, sm_y_train)
 
 # COMMAND ----------
@@ -378,8 +381,8 @@ spark_trials = SparkTrials(parallelism = 32, timeout = 36000)
 
 search_space_gb = {
     'type': 'gb',
-    'n_estimators' : hp.randint('gb_n_estimators', 500),
-    'max_depth': hp.quniform('gb_max_depth', 1, 10, 1),
+    'n_estimators' : hp.randint('gb_n_estimators', 1000),
+    'max_depth': hp.quniform('gb_max_depth', 1, 20, 1),
     'learning_rate': hp.lognormal('learning_rate', 0, 1.0),
     'min_samples_split': hp.uniform('gb_min_samples_split', 0, 0.5),
     'min_samples_leaf': hp.uniform('gb_min_samples_leaf', 0, 0.5)
@@ -451,7 +454,133 @@ df_pd
 
 # COMMAND ----------
 
-df_pd.to_csv('/dbfs/FileStore/Siqi thesis/df_pd.csv')
+#df_pd.to_csv('/dbfs/FileStore/Siqi thesis/df_pd.csv', index=False)
+
+# COMMAND ----------
+
+#df_pd = pd.read_csv("/dbfs/FileStore/Siqi thesis/df_pd.csv")
+
+# COMMAND ----------
+
+#df_pd['pred_gb'] = y_pred_gb.tolist()
+#df_pd['pd_gb'] = pd_gb.tolist()
+
+# COMMAND ----------
+
+#df_pd.to_csv('/dbfs/FileStore/Siqi thesis/df_pd.csv')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Random Forest Interpretability
+# MAGIC Since random forest is the best model so far, we have a look at the model interpretability by getting the global feature importance and local SHAP values
+# MAGIC ### feature importance
+
+# COMMAND ----------
+
+importances = best_rf.feature_importances_
+std = np.std([tree.feature_importances_ for tree in best_rf.estimators_], axis=0)
+sorted_indices = np.argsort(importances)[::-1]
+
+# COMMAND ----------
+
+import pandas as pd
+
+forest_importances = pd.Series(importances[sorted_indices], index= sm_X_train.columns[sorted_indices])
+
+fig, ax = plt.subplots()
+forest_importances.plot.bar(yerr=std[sorted_indices], ax=ax)
+ax.set_title("Feature importances")
+ax.set_ylabel("Mean decrease in impurity")
+fig.tight_layout()
+
+# COMMAND ----------
+
+import matplotlib.pyplot as plt
+ 
+plt.title('Feature Importance')
+plt.bar(range(X_train.shape[1]), importances[sorted_indices], align='center')
+plt.xticks(range(X_train.shape[1]), X_train.columns[sorted_indices], rotation=90)
+plt.tight_layout()
+plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### SHAP interpretability
+
+# COMMAND ----------
+
+import shap
+explainer = shap.TreeExplainer(best_rf)
+
+# COMMAND ----------
+
+# based on all data from test set
+shap_values = explainer(X_test)
+
+# COMMAND ----------
+
+# based on all data from test set
+shap.plots.beeswarm(shap_values[:,:,0])
+
+# COMMAND ----------
+
+# based on all data from test set
+shap.plots.beeswarm(shap_values[:,:,1])
+
+# COMMAND ----------
+
+# global interpretability
+# only took a sample
+sample = X_test.sample(100)
+shap_values_sample = explainer.shap_values(sample)
+shap.summary_plot(shap_values_sample, sample, max_display = 20)
+
+# COMMAND ----------
+
+# sample importance 
+shap.summary_plot(shap_values_sample[1],sample)
+
+# COMMAND ----------
+
+# local interpretability 
+# 1
+shap_display = shap.force_plot(explainer.expected_value[1], 
+                               shap_values_sample[1][0], 
+                               sample.iloc[0], 
+                               matplotlib=True)
+display(shap_display)
+
+# COMMAND ----------
+
+# local interpretability 
+# 2
+shap_display = shap.force_plot(explainer.expected_value[1], 
+                               shap_values_sample[1][3], 
+                               sample.iloc[3], 
+                               matplotlib=True)
+display(shap_display)
+
+# COMMAND ----------
+
+# local interpretability 
+# 3
+shap_display = shap.force_plot(explainer.expected_value[1], 
+                               shap_values_sample[1][20], 
+                               sample.iloc[20], 
+                               matplotlib=True)
+display(shap_display)
+
+# COMMAND ----------
+
+# local interpretability 
+# 4
+shap_display = shap.force_plot(explainer.expected_value[1], 
+                               shap_values_sample[1][50], 
+                               sample.iloc[50], 
+                               matplotlib=True)
+display(shap_display)
 
 # COMMAND ----------
 
@@ -459,58 +588,28 @@ df_pd.to_csv('/dbfs/FileStore/Siqi thesis/df_pd.csv')
 
 # COMMAND ----------
 
-
-
-# COMMAND ----------
-
-rf =  RandomForestClassifier(
-  bootstrap=False,
-  criterion="entropy",
-  max_depth=2,
-  max_features=0.8090857497321342,
-  min_samples_leaf=5.5104164956992774e-05,
-  min_samples_split=0.1965917120474412,
-  n_estimators=3,
-  random_state=842397141,
+import lime
+from lime import lime_tabular
+ 
+explainer = lime_tabular.LimeTabularExplainer(
+    training_data=np.array(sm_X_train),
+    feature_names=sm_X_train.columns,
+    class_names=['Non-default','Default'],
+    mode='classification'
 )
-rf.fit(sm_X_train, sm_y_train)
-
-y_pred = rf.predict(sm_X_train)
-eva = [accuracy_score(sm_y_train, y_pred),
-       precision_score(sm_y_train, y_pred),
-       recall_score(sm_y_train, y_pred),
-       fbeta_score(sm_y_train, y_pred, beta = 2)]
-eva
 
 # COMMAND ----------
 
-rf =  RandomForestClassifier(
-  bootstrap=False,
-  criterion="entropy",
-  max_depth=15,
-#  max_features=0.8090857497321342,
- # min_samples_leaf=5.5104164956992774e-05,
-  #min_samples_split=0.1965917120474412,
-  n_estimators=500,
-  random_state=842397141,
+exp = explainer.explain_instance(
+    data_row=X_test.iloc[1], 
+    predict_fn = best_rf.predict_proba
 )
-rf.fit(sm_X_train, sm_y_train)
-
-y_pred = rf.predict(sm_X_train)
-eva = [accuracy_score(sm_y_train, y_pred),
-       precision_score(sm_y_train, y_pred),
-       recall_score(sm_y_train, y_pred),
-       fbeta_score(sm_y_train, y_pred, beta = 2)]
-eva
+ 
+exp.show_in_notebook(show_table=True)
 
 # COMMAND ----------
 
-y_pred = rf.predict(X_test)
-eva = [accuracy_score(y_test, y_pred),
-       precision_score(y_test, y_pred),
-       recall_score(y_test, y_pred),
-       fbeta_score(y_test, y_pred, beta = 2)]
-eva
+exp.show_in_notebook(show_table=True).displayHTML()
 
 # COMMAND ----------
 
