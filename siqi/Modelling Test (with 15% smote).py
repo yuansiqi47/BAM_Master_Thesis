@@ -1,8 +1,4 @@
 # Databricks notebook source
-pip install lime
-
-# COMMAND ----------
-
 # Import packages
 import pandas as pd
 import numpy as np
@@ -30,12 +26,12 @@ df = df.drop(columns = ['P2'])
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Train test split
+df = df.sample(frac=1,  random_state=101842).reset_index(drop=True)
 
 # COMMAND ----------
 
-df = df.iloc[:,1:]
+# MAGIC %md
+# MAGIC ### Train test split
 
 # COMMAND ----------
 
@@ -62,18 +58,13 @@ X_train, X_test, y_train, y_test = train_test_split(Xtrans, y, stratify = df['de
 # COMMAND ----------
 
 # smote
-sm = SMOTE(random_state=0)
+sm = SMOTE(random_state=0, sampling_strategy = 0.15)
 columns = X_train.columns
 sm_X_train, sm_y_train = sm.fit_resample(X_train, y_train)
 sm_X_train = pd.DataFrame(data=sm_X_train,columns=columns )
 sm_y_train = pd.DataFrame(data=sm_y_train,columns=['default'])
 # check the default proportion
 print("Proportion of default data in oversampled data is ",len(sm_y_train[sm_y_train['default']==1])/len(sm_X_train))
-
-# COMMAND ----------
-
-sm_X_train = sm_X_train.sample(frac=1,  random_state=42).reset_index(drop=True)
-sm_y_train = sm_y_train.sample(frac=1,  random_state=42).reset_index(drop=True)
 
 # COMMAND ----------
 
@@ -107,6 +98,10 @@ log_model.fit().summary()
 
 lr = LogisticRegression(random_state=0, penalty = 'none', max_iter = 1000)
 lr.fit(sm_X_train, sm_y_train)
+
+# COMMAND ----------
+
+cross_val_score(lr, sm_X_train, sm_y_train, scoring = fbeta).mean()
 
 # COMMAND ----------
 

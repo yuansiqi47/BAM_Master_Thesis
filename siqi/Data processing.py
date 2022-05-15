@@ -164,7 +164,7 @@ financials['G4'] = financials['roe']-financials['lag_roe']
 # COMMAND ----------
 
 # Calculating the ratio in size
-financials['S'] = np.log10(financials['at'])
+financials['S'] = np.log(financials['at'])
 
 # COMMAND ----------
 
@@ -493,7 +493,7 @@ df
 # COMMAND ----------
 
 # write csv file
-df.to_csv('/dbfs/FileStore/Siqi thesis/df.csv')
+# df.to_csv('/dbfs/FileStore/Siqi thesis/df.csv', index=False)
 
 # COMMAND ----------
 

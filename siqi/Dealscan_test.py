@@ -133,6 +133,12 @@ dealscan_merged.to_csv('/dbfs/FileStore/Siqi thesis/dealscan_merged.csv', index=
 
 # COMMAND ----------
 
+import pandas as pd
+# load data
+dealscan_merged = pd.read_csv("/dbfs/FileStore/Siqi thesis/dealscan_merged.csv")
+
+# COMMAND ----------
+
 import numpy as np
 import math
 from scipy.stats import norm
@@ -140,13 +146,14 @@ from scipy.stats import norm
 # COMMAND ----------
 
 def Captial_Requirement(PD, M, loan_amt, exchange_rate):
-    if PD == 0:
+    if PD < 0.00000293:
         return 0
     else:
         LGD = 1
         R = 0.12*(1-math.exp(-50*PD))/(1-math.exp(-50))+0.24* (1 - (1-math.exp(-50*PD))/(1-math.exp(-50)))
         b = (0.11852-0.05478*np.log(PD))**2
         RW = (LGD*norm.cdf(1/np.sqrt(1-R)*norm.ppf(PD)+np.sqrt(R/(1-R))*norm.ppf(0.999))-LGD*PD)*(1+(M-2.5)*b)/(1-1.5*b)*1.25*1.06
+        print(RW)
         CR = RW * loan_amt * exchange_rate * 0.08
         return CR
 
@@ -174,18 +181,33 @@ dealscan_merged['CR_gb'] = CR_gb
 # COMMAND ----------
 
 model = ['Logistic regression (baseline)', 'Logistic regression (Lasso)', 'SVM', 'Random Forest', 'Gradient Boosting']
-Eco_evaluation = pd.DataFrame(columns = model,
-                         index = ['Capital requirement (billion)', 'Economical loss (billion)'])
+CR_evaluation = pd.DataFrame(
+    columns = ['Capital requirement', 'Capital requirement (non-defaults only)'],
+    index = model)
 
 # COMMAND ----------
 
-Eco_evaluation.loc['Capital requirement (billion)', :] = [round(dealscan_merged['CR_lr'].sum()/1000000000, 3),
-                                                          round(dealscan_merged['CR_lasso'].sum()/1000000000, 3),
-                                                          round(dealscan_merged['CR_svm'].sum()/1000000000, 3),
-                                                          round(dealscan_merged['CR_rf'].sum()/1000000000, 3),
-                                                          round(dealscan_merged['CR_gb'].sum()/1000000000, 3)
-                                                         ]
-Eco_evaluation
+CR_evaluation.loc[:, 'Capital requirement'] = [round(dealscan_merged['CR_lr'].sum()/1000000000, 3),
+                                                round(dealscan_merged['CR_lasso'].sum()/1000000000, 3),
+                                                round(dealscan_merged['CR_svm'].sum()/1000000000, 3),
+                                                round(dealscan_merged['CR_rf'].sum()/1000000000, 3),
+                                                round(dealscan_merged['CR_gb'].sum()/1000000000, 3)
+                                               ]
+
+# COMMAND ----------
+
+CR_evaluation.loc[:, 'Capital requirement (non-defaults only)'] = [
+    round(dealscan_merged[dealscan_merged['pred_lr'] == 0]['CR_lr'].sum()/1000000000, 3),
+    round(dealscan_merged[dealscan_merged['pred_lasso'] == 0]['CR_lasso'].sum()/1000000000, 3),
+    round(dealscan_merged[dealscan_merged['pred_svm'] == 0]['CR_svm'].sum()/1000000000, 3),
+    round(dealscan_merged[dealscan_merged['pred_rf'] == 0]['CR_rf'].sum()/1000000000, 3),
+    round(dealscan_merged[dealscan_merged['pred_gb'] == 0]['CR_gb'].sum()/1000000000, 3)
+]
+CR_evaluation
+
+# COMMAND ----------
+
+print(CR_evaluation.to_latex())
 
 # COMMAND ----------
 
@@ -194,30 +216,46 @@ Eco_evaluation
 
 # COMMAND ----------
 
-len(dealscan_merged)
-
-# COMMAND ----------
-
-len(dealscan_merged.dropna(subset = ['rate']))
-
-# COMMAND ----------
-
-def Eco_loss(df, pred_model, CR_model):
-    df_fn = df[(df['default'] == 1) & (df[pred_model] == 0)]
+def Eco_loss(df, pred, CR):
+    df_fn = df[(df['default'] == 1) & (df[pred] == 0)]
     loss_fn = sum(df_fn['FacilityAmt'] * df_fn['ExchangeRate'])
-    df_fp = df[(df['default'] == 0) & (df[pred_model] == 1)]
+    df_fp = df[(df['default'] == 0) & (df[pred] == 1)]
     loss_fp = sum(df_fp['FacilityAmt'] * df_fp['ExchangeRate'] *df_fp['rate'])
-    loss_cr = 0.115 * df[CR_model].sum()
+    loss_cr = 0.115 * df[df[pred] == 0][CR].sum()
     loss = loss_fn + loss_fp + loss_cr
-    return loss
+    return round(loss_fn/1000000000, 3), round(loss_fp/1000000000, 3), round(loss_cr/1000000000, 3), round(loss/1000000000, 3)
 
 # COMMAND ----------
 
-loss_lr = Eco_loss(dealscan_merged, 'pred_lr', 'CR_lr')
-loss_lasso = Eco_loss(dealscan_merged, 'pred_lasso', 'CR_lasso')
-loss_svm = Eco_loss(dealscan_merged, 'pred_svm', 'CR_svm')
-loss_rf = Eco_loss(dealscan_merged, 'pred_rf', 'CR_rf')
-loss_gb = Eco_loss(dealscan_merged, 'pred_gb', 'CR_gb')
+lr_loss = list(Eco_loss(dealscan_merged, 'pred_lr', 'CR_lr'))
+lasso_loss = list(Eco_loss(dealscan_merged, 'pred_lasso', 'CR_lasso'))
+svm_loss = list(Eco_loss(dealscan_merged, 'pred_svm', 'CR_svm'))
+rf_loss = list(Eco_loss(dealscan_merged, 'pred_rf', 'CR_rf'))
+gb_loss = list(Eco_loss(dealscan_merged, 'pred_gb', 'CR_gb'))
+
+# COMMAND ----------
+
+products_list = [lr_loss, lasso_loss, svm_loss, rf_loss, gb_loss]
+
+Eco_evaluation = pd.DataFrame (products_list, columns = ['loss_II', 'loss_I', 'loss_cr', 'loss_total'], 
+                   index = ['Logistic regression (baseline)','Logistic regression (Lasso)','SVM','Random Forest','Gradient Boosting'])
+Eco_evaluation
+
+# COMMAND ----------
+
+print(Eco_evaluation.to_latex())
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+loss_II_lr, loss_I_lr, loss_cr_lr, loss_lr = Eco_loss(dealscan_merged, 'pred_lr', 'CR_lr')
+loss_II_lasso, loss_I_lasso, loss_cr_lasso, loss_lasso = Eco_loss(dealscan_merged, 'pred_lasso', 'CR_lasso')
+loss_II_svm, loss_I_svm, loss_cr_svm, loss_svm = Eco_loss(dealscan_merged, 'pred_svm', 'CR_svm')
+loss_II_rf, loss_I_rf, loss_cr_rf, loss_rf = Eco_loss(dealscan_merged, 'pred_rf', 'CR_rf')
+loss_II_gb, loss_I_gb, loss_cr_gb, loss_gb = Eco_loss(dealscan_merged, 'pred_gb', 'CR_gb')
 
 # COMMAND ----------
 
