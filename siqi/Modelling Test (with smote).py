@@ -510,7 +510,7 @@ for col in col_list:
     
 df_pd.columns = ['gvkey', 'datadate', 'fyear', 'default', 'default_date','gsector','pred_lr','pd_lr',
                  'pred_lasso','pd_lasso','pred_svm','pd_svm','pred_rf','pd_rf','pred_gb','pd_gb']
-df_pd
+df_pd.head()
 
 # COMMAND ----------
 
@@ -601,56 +601,7 @@ print("Estimated probability:", expit(-5.743))
 
 # COMMAND ----------
 
-# local interpretability 
-# 1
-shap.initjs()
-shap_display = shap.force_plot(explainer.expected_value, 
-                               shap_values[0], 
-                               X_test.iloc[0], 
-                               matplotlib=True)
-display(shap_display)
 
-# COMMAND ----------
-
-# local interpretability 
-# 2
-shap_display = shap.force_plot(explainer.expected_value[0], 
-                               shap_values[20], 
-                               sample.iloc[20], 
-                               matplotlib=True)
-display(shap_display)
-
-# COMMAND ----------
-
-# local interpretability 
-# 3
-shap_display = shap.force_plot(explainer.expected_value[0], 
-                               shap_values[50], 
-                               sample.iloc[50], 
-                               matplotlib=True)
-display(shap_display)
-
-# COMMAND ----------
-
-# local interpretability 
-# 4
-shap_display = shap.force_plot(explainer.expected_value[0], 
-                               shap_values[9], 
-                               sample.iloc[9], 
-                               matplotlib=True)
-display(shap_display)
-
-# COMMAND ----------
-
-y = best_gb.predict_proba(X_test)[:,1]
-# exected raw base value
-y_raw = logit(y).mean()
-# expected probability, i.e. base value in probability spacy
-print("Expected raw score (before sigmoid):", y_raw)
-print("Expected probability:", expit(y_raw))
-
-# visualize the first prediction's explanation (use matplotlib=True to avoid Javascript)
-shap.force_plot(explainer.expected_value[0], shap_values[7,:], X_test.iloc[7,:], matplotlib=True)
 
 # COMMAND ----------
 

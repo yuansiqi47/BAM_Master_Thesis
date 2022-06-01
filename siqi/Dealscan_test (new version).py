@@ -152,13 +152,29 @@ from scipy.stats import norm
 
 # COMMAND ----------
 
-def Captial_Requirement(PD, M, loan_amt, exchange_rate):
+dealscan_merged['LGD'] = int()
+dealscan_merged.loc[dealscan_merged['gsector']== 10, 'LGD'] = 0.59
+dealscan_merged.loc[dealscan_merged['gsector']== 15, 'LGD'] = 0.41
+dealscan_merged.loc[dealscan_merged['gsector']== 20, 'LGD'] = 0.38
+dealscan_merged.loc[dealscan_merged['gsector']== 25, 'LGD'] = 0.40
+dealscan_merged.loc[dealscan_merged['gsector']== 30, 'LGD'] = 0.32
+dealscan_merged.loc[dealscan_merged['gsector']== 35, 'LGD'] = 0.28
+dealscan_merged.loc[dealscan_merged['gsector']== 45, 'LGD'] = 0.32
+dealscan_merged.loc[dealscan_merged['gsector']== 50, 'LGD'] = 0.34
+
+
+# COMMAND ----------
+
+def Captial_Requirement(PD, LGD, M, loan_amt, exchange_rate):
     # convert M from month to year
-    M = M/12
+    M = M/12    
     if PD < 0.00000293:
         return 0
+    elif PD >= 0.5:
+        return 0
     else:
-        LGD = 1
+        # convert PD to the scheme
+        PD = PD/50*28
         R = 0.12*(1-math.exp(-50*PD))/(1-math.exp(-50))+0.24* (1 - (1-math.exp(-50*PD))/(1-math.exp(-50)))
         b = (0.11852-0.05478*np.log(PD))**2
         RW = (LGD*norm.cdf(1/np.sqrt(1-R)*norm.ppf(PD)+np.sqrt(R/(1-R))*norm.ppf(0.999))-LGD*PD)*(1+(M-2.5)*b)/(1-1.5*b)*1.25*1.06
@@ -167,16 +183,18 @@ def Captial_Requirement(PD, M, loan_amt, exchange_rate):
 
 # COMMAND ----------
 
-CR_lr = list(map(Captial_Requirement, dealscan_merged['pd_lr'].tolist(), dealscan_merged['Maturity'].tolist(),
-                dealscan_merged['FacilityAmt'].tolist(), dealscan_merged['ExchangeRate'].tolist()))
-CR_lasso = list(map(Captial_Requirement, dealscan_merged['pd_lasso'].tolist(), dealscan_merged['Maturity'].tolist(),
-                dealscan_merged['FacilityAmt'].tolist(), dealscan_merged['ExchangeRate'].tolist()))
-CR_svm = list(map(Captial_Requirement, dealscan_merged['pd_svm'].tolist(), dealscan_merged['Maturity'].tolist(),
-                dealscan_merged['FacilityAmt'].tolist(), dealscan_merged['ExchangeRate'].tolist()))
-CR_rf = list(map(Captial_Requirement, dealscan_merged['pd_rf'].tolist(), dealscan_merged['Maturity'].tolist(),
-                dealscan_merged['FacilityAmt'].tolist(), dealscan_merged['ExchangeRate'].tolist()))
-CR_gb = list(map(Captial_Requirement, dealscan_merged['pd_gb'].tolist(), dealscan_merged['Maturity'].tolist(),
-                dealscan_merged['FacilityAmt'].tolist(), dealscan_merged['ExchangeRate'].tolist()))
+LGD = dealscan_merged['LGD'].tolist()
+M = dealscan_merged['Maturity'].tolist()
+loan_amt = dealscan_merged['FacilityAmt'].tolist()
+exchange_rate = dealscan_merged['ExchangeRate'].tolist()
+
+# COMMAND ----------
+
+CR_lr = list(map(Captial_Requirement, dealscan_merged['pd_lr'].tolist(), LGD, M, loan_amt, exchange_rate))
+CR_lasso = list(map(Captial_Requirement, dealscan_merged['pd_lasso'].tolist(), LGD, M, loan_amt, exchange_rate))
+CR_svm = list(map(Captial_Requirement, dealscan_merged['pd_svm'].tolist(), LGD, M, loan_amt, exchange_rate))
+CR_rf = list(map(Captial_Requirement, dealscan_merged['pd_rf'].tolist(), LGD, M, loan_amt, exchange_rate))
+CR_gb = list(map(Captial_Requirement, dealscan_merged['pd_gb'].tolist(), LGD, M, loan_amt, exchange_rate))
 
 # COMMAND ----------
 
@@ -190,7 +208,7 @@ dealscan_merged['CR_gb'] = CR_gb
 
 model = ['Logistic regression (baseline)', 'Logistic regression (Lasso)', 'SVM', 'Random Forest', 'Gradient Boosting']
 CR_evaluation = pd.DataFrame(
-    columns = ['Capital requirement', 'Capital requirement (non-defaults only)'],
+    columns = ['Capital requirement'],
     index = model)
 
 # COMMAND ----------
@@ -200,17 +218,11 @@ CR_evaluation.loc[:, 'Capital requirement'] = [round(dealscan_merged['CR_lr'].su
                                                 round(dealscan_merged['CR_svm'].sum()/1000000000, 3),
                                                 round(dealscan_merged['CR_rf'].sum()/1000000000, 3),
                                                 round(dealscan_merged['CR_gb'].sum()/1000000000, 3)
-                                               ]
+                                              ]
 
 # COMMAND ----------
 
-CR_evaluation.loc[:, 'Capital requirement (non-defaults only)'] = [
-    round(dealscan_merged[dealscan_merged['pred_lr'] == 0]['CR_lr'].sum()/1000000000, 3),
-    round(dealscan_merged[dealscan_merged['pred_lasso'] == 0]['CR_lasso'].sum()/1000000000, 3),
-    round(dealscan_merged[dealscan_merged['pred_svm'] == 0]['CR_svm'].sum()/1000000000, 3),
-    round(dealscan_merged[dealscan_merged['pred_rf'] == 0]['CR_rf'].sum()/1000000000, 3),
-    round(dealscan_merged[dealscan_merged['pred_gb'] == 0]['CR_gb'].sum()/1000000000, 3)
-]
+CR_evaluation.loc[:, 'differences'] =CR_evaluation.loc[:, 'Capital requirement'] - CR_evaluation.iloc[0]['Capital requirement']
 CR_evaluation
 
 # COMMAND ----------
@@ -226,10 +238,10 @@ print(CR_evaluation.to_latex())
 
 def Eco_loss(df, pred, CR):
     df_fn = df[(df['default'] == 1) & (df[pred] == 0)]
-    loss_fn = sum(df_fn['FacilityAmt'] * df_fn['ExchangeRate'])
+    loss_fn = sum(df_fn['FacilityAmt'] * df_fn['ExchangeRate']* df_fn['LGD'])
     df_fp = df[(df['default'] == 0) & (df[pred] == 1)]
-    loss_fp = sum(df_fp['FacilityAmt'] * df_fp['ExchangeRate'] *df_fp['rate']* df_fp['Maturity']/12)
-    loss_cr = 0.115 * df[df[pred] == 0][CR].sum()
+    loss_fp = sum(df_fp['FacilityAmt'] * df_fp['ExchangeRate'] *df_fp['rate'])
+    loss_cr = 0.115 * df[CR].sum()
     loss = loss_fn + loss_fp + loss_cr
     return round(loss_fn/1000000000, 3), round(loss_fp/1000000000, 3), round(loss_cr/1000000000, 3), round(loss/1000000000, 3)
 
@@ -247,31 +259,16 @@ products_list = [lr_loss, lasso_loss, svm_loss, rf_loss, gb_loss]
 
 Eco_evaluation = pd.DataFrame (products_list, columns = ['loss_II', 'loss_I', 'loss_cr', 'loss_total'], 
                    index = ['Logistic regression (baseline)','Logistic regression (Lasso)','SVM','Random Forest','Gradient Boosting'])
+
+
+# COMMAND ----------
+
+Eco_evaluation.loc[:, 'economical gains'] = Eco_evaluation.iloc[0]['loss_total'] - Eco_evaluation.loc[:, 'loss_total']
 Eco_evaluation
 
 # COMMAND ----------
 
 print(Eco_evaluation.to_latex())
-
-# COMMAND ----------
-
-import numpy as np
-
-# COMMAND ----------
-
-rstate = np.random.default_rng(2022)
-
-# COMMAND ----------
-
-np.random.Generator(np.random.PCG64())
-
-# COMMAND ----------
-
-0x7FC64700A340
-
-# COMMAND ----------
-
-np.random.PCG64()
 
 # COMMAND ----------
 
