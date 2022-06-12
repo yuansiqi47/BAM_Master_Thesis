@@ -1,20 +1,13 @@
 # Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+The objective of this study is to showcase how to modernize Credit Risk Modeling (CRM) and mitigate the credit risk by implementing ML techniques to the IRB approach. This research assesses the current CRM situation by comparing the traditional approach and enhanced ML approaches. During the process, various modern ML techniques will be investigated and tuned to reach the most optimal prediction power. The model performance will be compared through evaluation metrics. In addition, the results of these models will be adopted to calculate the minimum capital requirements for banks. In doing so, the economical gains of applying different ML techniques could be estimated and compared. Thus, these models will be evaluated and validated in a statistical as well as an economical way.  
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
-
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
-
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
-
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+# Files in the repository
+ `1. data processing.ipynb` is the file where I cleaned, merged and processed data
+ 
+ `2. modelling (without sampling).ipynb` is the file where I trained models based on the training set without sampling. I also tested models' performance on the test set.
+ 
+ `3. modelling (with sampling).ipynb` is the file where I trained models based on the training set with sampling. I also tested models' performance on the test set and analysed feature importance through SHAP values.
+ 
+ `4. economical analysis.ipynb` is the file where I calculated economical gains of applying ML models compared with the baseline models
+ 
+  To reproduce my results, please run the code in the above order.
