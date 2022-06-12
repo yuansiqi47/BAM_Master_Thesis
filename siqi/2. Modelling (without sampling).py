@@ -12,10 +12,6 @@ import statsmodels.api as statm
 import mlflow
 from hyperopt import fmin, tpe, hp, SparkTrials, STATUS_OK, Trials, space_eval
 import matplotlib.pyplot as plt
-from imblearn.over_sampling import SMOTE
-from imblearn.under_sampling import RandomUnderSampler 
-import shap
-from scipy.special import expit
 
 # COMMAND ----------
 
@@ -38,7 +34,6 @@ y = df['default']
 
 # COMMAND ----------
 
-
 # define imputer
 imputer = KNNImputer(n_neighbors=5, weights='uniform', metric='nan_euclidean')
 # fit on the dataset
@@ -57,25 +52,8 @@ X_train, X_test, y_train, y_test = train_test_split(Xtrans, y, stratify = df['de
 
 # COMMAND ----------
 
-# smote
-sm = SMOTE(random_state=0, sampling_strategy = 0.1)
-columns = X_train.columns
-sm_X_train, sm_y_train = sm.fit_resample(X_train, y_train)
-# check the default proportion
-print("Ratio of default data to non-default data is ",len(sm_y_train[sm_y_train==1])/len(sm_X_train[sm_y_train==0]))
-print("Proportion of default data in full data is ",len(sm_y_train[sm_y_train==1])/len(sm_X_train))
-
-# COMMAND ----------
-
-rus = RandomUnderSampler(random_state=42, sampling_strategy = 0.5)
-rs_X_train, rs_y_train = rus.fit_resample(sm_X_train, sm_y_train)
-print("Ratio of default data to non-default data is ",len(rs_y_train[rs_y_train==1])/len(rs_X_train[rs_y_train==0]))
-print("Proportion of default data in full data is ",len(rs_y_train[rs_y_train==1])/len(rs_X_train))
-
-# COMMAND ----------
-
-print("Length of training data set ", len(rs_y_train))
-print("Length of testing data set ", len(y_test))
+y_train = np.asarray(y_train)
+y_test = np.asarray(y_test)
 
 # COMMAND ----------
 
@@ -90,7 +68,7 @@ metrics = {'fbeta': fbeta, 'accuracy':'accuracy', 'precision':'precision', 'reca
 # COMMAND ----------
 
 # logit model on training set
-log_model = statm.Logit(rs_y_train, rs_X_train)
+log_model = statm.Logit(y_train, X_train)
 
 # COMMAND ----------
 
@@ -124,10 +102,10 @@ lr = LogisticRegression(random_state=0, penalty = 'none', max_iter = 1000)
 
 # COMMAND ----------
 
-accuracy = cross_val_score(lr, rs_X_train, rs_y_train, scoring = 'accuracy', cv = 5).mean()
-precision = cross_val_score(lr, rs_X_train, rs_y_train, scoring = 'precision', cv = 5).mean() 
-recall = cross_val_score(lr, rs_X_train, rs_y_train, scoring = 'recall', cv = 5).mean()
-fbeta_val = cross_val_score(lr, rs_X_train, rs_y_train, scoring = fbeta).mean()
+accuracy = cross_val_score(lr, X_train, y_train, scoring = 'accuracy', cv = 5).mean()
+precision = cross_val_score(lr, X_train, y_train, scoring = 'precision', cv = 5).mean() 
+recall = cross_val_score(lr, X_train, y_train, scoring = 'recall', cv = 5).mean()
+fbeta_val = cross_val_score(lr, X_train, y_train, scoring = fbeta).mean()
 
 # COMMAND ----------
 
@@ -136,7 +114,7 @@ val_scores
 
 # COMMAND ----------
 
-lr.fit(rs_X_train, rs_y_train)
+lr.fit(X_train, y_train)
 
 # COMMAND ----------
 
@@ -156,18 +134,13 @@ evaluation
 
 # COMMAND ----------
 
-pd_lr = lr.predict_proba(X_test)[:, 1]
-pd_lr
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ## Experiment
 
 # COMMAND ----------
 
 rstate = np.random.default_rng(20220524)
-algo = tpe.suggest
+algo=tpe.suggest
 
 # COMMAND ----------
 
@@ -186,7 +159,7 @@ def objective(params):
         clf = GradientBoostingClassifier(**params, random_state = 0)
     else:
         return 0
-    fbeta_score = cross_val_score(clf, rs_X_train, rs_y_train, scoring = fbeta).mean()
+    fbeta_score = cross_val_score(clf, X_train, y_train, scoring = fbeta).mean()
     
     # Because fmin() tries to minimize the objective, this function must return the negative accuracy. 
     return {'loss': -fbeta_score, 'status': STATUS_OK}
@@ -213,13 +186,12 @@ search_space_lasso = {
 
 with mlflow.start_run():
     best_result = fmin(
-        fn = objective, 
-        space = search_space_lasso,
-        algo = algo,
-        max_evals = 100,
-        trials = spark_trials,
+        fn=objective, 
+        space=search_space_lasso,
+        algo=algo,
+        max_evals=100,
+        trials=spark_trials,
         rstate = rstate)
-                    
 
 # COMMAND ----------
 
@@ -233,9 +205,9 @@ best_lasso = LogisticRegression(**para_lasso, random_state = 0, penalty = 'l1', 
 
 # COMMAND ----------
 
-accuracy = cross_val_score(best_lasso, rs_X_train, rs_y_train, scoring = 'accuracy', cv = 5).mean()
-precision = cross_val_score(best_lasso, rs_X_train, rs_y_train, scoring = 'precision', cv = 5).mean() 
-recall = cross_val_score(best_lasso, rs_X_train, rs_y_train, scoring = 'recall', cv = 5).mean()
+accuracy = cross_val_score(best_lasso, X_train, y_train, scoring = 'accuracy', cv = 5).mean()
+precision = cross_val_score(best_lasso, X_train, y_train, scoring = 'precision', cv = 5).mean() 
+recall = cross_val_score(best_lasso, X_train, y_train, scoring = 'recall', cv = 5).mean()
 
 val_scores.loc['Logistic regression (Lasso)', :] = [accuracy, precision, recall, 
                                                 -spark_trials.best_trial['result']['loss']]
@@ -243,7 +215,7 @@ val_scores
 
 # COMMAND ----------
 
-best_lasso.fit(rs_X_train, rs_y_train)
+best_lasso.fit(X_train, y_train)
 
 # COMMAND ----------
 
@@ -260,11 +232,6 @@ evaluation.loc['Logistic regression (Lasso)', :] = [accuracy_score(y_test, y_pre
                                                        recall_score(y_test, y_pred_lasso), 
                                                        fbeta_score(y_test, y_pred_lasso, beta = 2)]
 evaluation
-
-# COMMAND ----------
-
-pd_lasso = best_lasso.predict_proba(X_test)[:,1]
-pd_lasso
 
 # COMMAND ----------
 
@@ -309,9 +276,9 @@ best_svm = SVC(**para_svm, probability = True, random_state = 0)
 
 # COMMAND ----------
 
-accuracy = cross_val_score(best_svm, rs_X_train, rs_y_train, scoring = 'accuracy', cv = 5).mean()
-precision = cross_val_score(best_svm, rs_X_train, rs_y_train, scoring = 'precision', cv = 5).mean() 
-recall = cross_val_score(best_svm, rs_X_train, rs_y_train, scoring = 'recall', cv = 5).mean()
+accuracy = cross_val_score(best_svm, X_train, y_train, scoring = 'accuracy', cv = 5).mean()
+precision = cross_val_score(best_svm, X_train, y_train, scoring = 'precision', cv = 5).mean() 
+recall = cross_val_score(best_svm, X_train, y_train, scoring = 'recall', cv = 5).mean()
 
 val_scores.loc['SVM', :] = [accuracy, precision, recall, 
                             -spark_trials.best_trial['result']['loss']]
@@ -319,7 +286,7 @@ val_scores
 
 # COMMAND ----------
 
-best_svm.fit(rs_X_train, rs_y_train)
+best_svm.fit(X_train, y_train)
 
 # COMMAND ----------
 
@@ -336,11 +303,6 @@ evaluation.loc['SVM', :] = [accuracy_score(y_test, y_pred_svm),
                             recall_score(y_test, y_pred_svm), 
                             fbeta_score(y_test, y_pred_svm, beta = 2)]
 evaluation
-
-# COMMAND ----------
-
-pd_svm = best_svm.predict_proba(X_test)[:,1]
-pd_svm
 
 # COMMAND ----------
 
@@ -387,9 +349,9 @@ best_rf = RandomForestClassifier(**para_rf, random_state = 0)
 
 # COMMAND ----------
 
-accuracy = cross_val_score(best_rf, rs_X_train, rs_y_train, scoring = 'accuracy', cv = 5).mean()
-precision = cross_val_score(best_rf, rs_X_train, rs_y_train, scoring = 'precision', cv = 5).mean() 
-recall = cross_val_score(best_rf, rs_X_train, rs_y_train, scoring = 'recall', cv = 5).mean()
+accuracy = cross_val_score(best_rf, X_train, y_train, scoring = 'accuracy', cv = 5).mean()
+precision = cross_val_score(best_rf, X_train, y_train, scoring = 'precision', cv = 5).mean() 
+recall = cross_val_score(best_rf, X_train, y_train, scoring = 'recall', cv = 5).mean()
 
 val_scores.loc['Random Forest', :] = [accuracy, precision, recall, 
                                       -spark_trials.best_trial['result']['loss']]
@@ -397,7 +359,7 @@ val_scores
 
 # COMMAND ----------
 
-best_rf.fit(rs_X_train, rs_y_train)
+best_rf.fit(X_train, y_train)
 
 # COMMAND ----------
 
@@ -417,13 +379,8 @@ evaluation
 
 # COMMAND ----------
 
-pd_rf = best_rf.predict_proba(X_test)[:,1]
-pd_rf
-
-# COMMAND ----------
-
 # MAGIC %md
-# MAGIC ## GB
+# MAGIC ## Gradient Boosting
 
 # COMMAND ----------
 
@@ -448,12 +405,12 @@ with mlflow.start_run():
         space=search_space_gb,
         algo=algo,
         max_evals=100,
-        trials=spark_trials,
-        rstate = rstate)
+        trials=spark_trials)
 
 # COMMAND ----------
 
 print(space_eval(search_space_gb, best_result))
+
 
 # COMMAND ----------
 
@@ -463,9 +420,9 @@ best_gb = GradientBoostingClassifier(**para_gb, random_state = 0)
 
 # COMMAND ----------
 
-accuracy = cross_val_score(best_gb, rs_X_train, rs_y_train, scoring = 'accuracy', cv = 5).mean()
-precision = cross_val_score(best_gb, rs_X_train, rs_y_train, scoring = 'precision', cv = 5).mean() 
-recall = cross_val_score(best_gb, rs_X_train, rs_y_train, scoring = 'recall', cv = 5).mean()
+accuracy = cross_val_score(best_gb, X_train, y_train, scoring = 'accuracy', cv = 5).mean()
+precision = cross_val_score(best_gb, X_train, y_train, scoring = 'precision', cv = 5).mean() 
+recall = cross_val_score(best_gb, X_train, y_train, scoring = 'recall', cv = 5).mean()
 
 val_scores.loc['Gradient Boosting', :] = [accuracy, precision, recall, 
                             -spark_trials.best_trial['result']['loss']]
@@ -473,7 +430,7 @@ val_scores
 
 # COMMAND ----------
 
-best_gb.fit(rs_X_train, rs_y_train)
+best_gb.fit(X_train, y_train)
 
 # COMMAND ----------
 
@@ -493,160 +450,4 @@ evaluation
 
 # COMMAND ----------
 
-pd_gb = best_gb.predict_proba(X_test)[:,1]
-pd_gb
 
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-df_pd = df.iloc[y_test.index][['gvkey', 'datadate', 'fyear', 'default', 'default_date', 'gsector']].reset_index(drop=True) 
-col_list = [y_pred_lr, pd_lr, y_pred_lasso, pd_lasso, y_pred_svm, pd_svm, y_pred_rf, pd_rf, y_pred_gb, pd_gb]
-
-for col in col_list:
-    df_pd = pd.concat([df_pd, pd.DataFrame(col)], axis = 1)
-    
-df_pd.columns = ['gvkey', 'datadate', 'fyear', 'default', 'default_date','gsector','pred_lr','pd_lr',
-                 'pred_lasso','pd_lasso','pred_svm','pd_svm','pred_rf','pd_rf','pred_gb','pd_gb']
-df_pd.head()
-
-# COMMAND ----------
-
-df_pd.to_csv('/dbfs/FileStore/Siqi thesis/df_pd.csv', index=False)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Gradient Boosting Interpretability
-# MAGIC Since Gradient Boosting is the best model so far, we have a look at the model interpretability by getting the global feature importance and local SHAP values
-# MAGIC ### feature importance
-
-# COMMAND ----------
-
-importances = best_gb.feature_importances_
-sorted_indices = np.argsort(importances)[::-1]
-
-# COMMAND ----------
-
-plt.title('Feature Importance')
-plt.bar(range(X_train.shape[1]), importances[sorted_indices], align='center')
-plt.xticks(range(X_train.shape[1]), X_train.columns[sorted_indices], rotation=90)
-plt.tight_layout()
-plt.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### SHAP interpretability
-
-# COMMAND ----------
-
-shap.initjs()
-explainer = shap.TreeExplainer(best_gb, model_output = 'raw')
-
-# COMMAND ----------
-
-shap_values = explainer.shap_values(X_test)
-
-# COMMAND ----------
-
-shap.summary_plot(shap_values, X_test, max_display = 10, show=False)
-plt.title("Feature Importance by SHAP Summary Plot")
-plt.ylabel("Features")
-plt.show()
-
-# COMMAND ----------
-
-# Plot SHAP summary plot with bar type
-shap.summary_plot(shap_values, X_test, max_display = 10, plot_type="bar", show= False )
-plt.title("Feature Importance by SHAP Values (mean absolute value)")
-plt.show()
-
-# COMMAND ----------
-
-shap.dependence_plot('L3', shap_values, X_test, show=False)
-plt.title(f"Dependence Plot : L3 ")
-plt.show()
-
-# COMMAND ----------
-
-shap.dependence_plot('R2', shap_values, X_test, show=False)
-plt.title(f"Dependence Plot : R2 ")
-plt.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC local interpretability
-
-# COMMAND ----------
-
-# plot the SHAP values for the random sampled observations
-shap.plots._waterfall.waterfall_legacy(explainer.expected_value[0], shap_values[7,:], X_test.iloc[7,:])
-print("Expected probability:", expit(explainer.expected_value[0]))
-print("Estimated probability:", expit(-2.033))
-
-# COMMAND ----------
-
-# plot the SHAP values for the random sampled observations
-shap.plots._waterfall.waterfall_legacy(explainer.expected_value[0], shap_values[3033,:], X_test.iloc[3033,:])
-print("Expected probability:", expit(explainer.expected_value[0]))
-print("Estimated probability:", expit(-5.743))
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-from sklearn.metrics import roc_curve, auc
-
-# COMMAND ----------
-
-y_test
-
-# COMMAND ----------
-
-fpr, tpr, _= roc_curve(y_test, pd_gb)
-roc_auc = auc(fpr, tpr)
-
-# COMMAND ----------
-
-plt.figure()
-lw = 2
-plt.plot(
-    fpr,
-    tpr,
-    color="darkorange",
-    lw=lw,
-    label="ROC curve (area = %0.2f)" % roc_auc,
-)
-plt.plot([0, 1], [0, 1], color="navy", lw=lw, linestyle="--")
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.xlabel("False Positive Rate")
-plt.ylabel("True Positive Rate")
-plt.title("Receiver operating characteristic example")
-plt.legend(loc="lower right")
-plt.show()
-
-# COMMAND ----------
-
-y_pred_rf_28 = (best_lasso.predict_proba(X_test)[:,1] > 0.28).astype('float')
-
-# COMMAND ----------
-
-[accuracy_score(y_test, y_pred_rf_28),
-                            precision_score(y_test, y_pred_rf_28),
-                            recall_score(y_test, y_pred_rf_28), 
-                            fbeta_score(y_test, y_pred_rf_28, beta = 2)]
