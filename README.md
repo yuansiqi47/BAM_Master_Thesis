@@ -12,15 +12,15 @@ The objective of this study is to showcase how to modernize Credit Risk Modeling
  
   To reproduce my results, please run the code in the above order.
   
-  # Data needed to reproduce the results
+  # Data required to reproduce the results
   
   `compustat_financial_final.csv` is retrieved from the `Compustat Daily Updates - Fundamentals Annual`. The dataset downloaded from WRDS contains 355,890 observations for listed companies in North America in the period of June 1987 to February 2016.
   
   `gdp_growth_rate_north_america.csv` is the data on the growth of GDP in North America obtained from `World Bank`.
   
-  `link.csv` is retrieved from `Roberts Dealscan-Compustat Linking Database`
+  `link.csv` is retrieved from `Roberts Dealscan-Compustat Linking Database`.
   
-  `delist_V2.csv` is retrieved from `CRSP Stock Events - Delisting Information (2022)`
+  `delist_V2.csv` is retrieved from `CRSP Stock Events - Delisting Information`.
   
   `rating_V2.csv` is retrieved from `Compustat Daily Updates - Ratings`. The data contains Standard & Poor’s rating from June 1989 to February 2017.
   
