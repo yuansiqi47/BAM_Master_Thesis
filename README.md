@@ -11,3 +11,22 @@ The objective of this study is to showcase how to modernize Credit Risk Modeling
  `4. Economical analysis.ipynb` is the file where I calculated economical gains of applying ML models compared with the baseline models
  
   To reproduce my results, please run the code in the above order.
+  
+  # Data needed to reproduce the results
+  
+  `compustat_financial_final.csv` is retrieved from the `Compustat Daily Updates - Fundamentals Annual`. The dataset downloaded from WRDS contains 355,890 observations for listed companies in North America in the period of June 1987 to February 2016.
+  
+  `gdp_growth_rate_north_america.csv` is the data on the growth of GDP in North America obtained from `World Bank`.
+  
+  `link.csv` is retrieved from `Roberts Dealscan-Compustat Linking Database`
+  
+  `delist_V2.csv` is retrieved from `CRSP Stock Events - Delisting Information (2022)`
+  
+  `rating_V2.csv` is retrieved from `Compustat Daily Updates - Ratings`. The data contains Standard & Poor’s rating from June 1989 to February 2017.
+  
+  `loan.csv` is retrieved from `WRDS-Reuters DealScan - Facility - Legacy`. The data contains registered loan information from June 1988 to February 2016.
+  
+  `interest.csv` is retrieved from `WRDS-Reuters DealScan - Current Facility Pricing - Legacy`.
+  
+  `dealscan_link.csv` is retrieved from `Roberts Dealscan-Compustat Linking Database`.
+    
